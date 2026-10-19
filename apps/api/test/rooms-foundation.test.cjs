@@ -193,6 +193,7 @@ test('room answers autosave securely and submit calculates score from the frozen
   assert.equal('isCorrect' in db.answers[0], false, 'Correctness is not exposed during autosave');
   const result = await service.submitRoom('room-join', joined.sessionToken);
   assert.equal(result.score, 1); assert.equal(result.correctCount, 1); assert.equal(result.rank, 1);
+  assert.equal(db.submissions[0].finishReason, 'STUDENT_SUBMITTED');
   assert.equal(result.top[0].firstName, 'Aruzhan');
   assert.equal(db.room.status, 'FINISHED');
 });
