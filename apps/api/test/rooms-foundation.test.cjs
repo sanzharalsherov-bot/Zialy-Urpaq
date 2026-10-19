@@ -197,6 +197,22 @@ test('room answers autosave securely and submit calculates score from the frozen
   assert.equal(db.room.status, 'FINISHED');
 });
 
+test('room submission after deadline is recorded as TIME_LIMIT', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+
+  db.room.status = 'RUNNING';
+  db.room.startedAt = new Date('2026-10-17T23:00:00Z');
+  db.room.durationMinutes = 30;
+  db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+
+  await service.submitRoom('room-join', joined.sessionToken);
+
+  assert.equal(db.submissions[0].status, 'GRADED');
+  assert.equal(db.submissions[0].finishReason, 'TIME_LIMIT');
+});
+
 test('room answer endpoint rejects fabricated choice ids', async () => {
   const db = fakeJoinPrisma(); const service = new RoomsService(db);
   const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
