@@ -1,0 +1,366 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  SHORT_TEXT
+  LONG_TEXT
+  NUMERIC
+  MATCHING
+  FILL_BLANKS
+  FILE_UPLOAD
+}
+
+enum AssignmentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum SubmissionStatus {
+  WAITING
+  IN_PROGRESS
+  SUBMITTED
+  UNDER_REVIEW
+  RETURNED
+  GRADED
+  EXPIRED
+}
+
+enum RoomStatus {
+  LOBBY
+  RUNNING
+  FINISHED
+  CANCELLED
+}
+
+enum NotificationType {
+  ASSIGNMENT_PUBLISHED
+  SUBMISSION_GRADED
+  SUBMISSION_RETURNED
+  DEADLINE_REMINDER
+  SYSTEM
+}
+
+model User {
+  id                  String          @id @default(cuid())
+  email               String          @unique
+  passwordHash        String
+  firstName           String
+  lastName            String
+  role                UserRole
+  isActive            Boolean         @default(true)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  studentProfile      StudentProfile?
+  teacherProfile      TeacherProfile?
+  createdAssignments  Assignment[]    @relation("AssignmentCreator")
+  reviewedSubmissions Submission[]    @relation("SubmissionReviewer")
+  gradeChanges        GradeHistory[]  @relation("GradeChangedBy")
+  notifications       Notification[]
+  auditEvents         AuditLog[]
+  createdTestRooms    TestRoom[]
+}
+
+model SchoolSettings {
+  id                    String   @id @default("school")
+  studentAccessCodeHash String
+  updatedAt             DateTime @updatedAt
+}
+
+model SchoolClass {
+  id           String           @id @default(cuid())
+  name         String           @unique
+  academicYear String
+  createdAt    DateTime         @default(now())
+  students     StudentProfile[]
+  assignments  Assignment[]
+}
+
+model StudentProfile {
+  id          String       @id @default(cuid())
+  userId      String       @unique
+  classId     String?
+  studentNo   String?      @unique
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schoolClass SchoolClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  submissions Submission[]
+}
+
+model TeacherProfile {
+  id         String           @id @default(cuid())
+  userId     String           @unique
+  employeeNo String?          @unique
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjects   TeacherSubject[]
+}
+
+model Subject {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  teachers    TeacherSubject[]
+  assignments Assignment[]
+}
+
+model TeacherSubject {
+  teacherId String
+  subjectId String
+  teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject   Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@id([teacherId, subjectId])
+}
+
+model Assignment {
+  id               String           @id @default(cuid())
+  title            String
+  description      String?
+  status           AssignmentStatus @default(DRAFT)
+  timeLimitMinutes Int?
+  maxAttempts      Int              @default(1)
+  joinCode         String           @unique
+  lobbyTarget      Int?
+  roomStartedAt    DateTime?
+  shuffleQuestions Boolean          @default(true)
+  shuffleOptions   Boolean          @default(true)
+  availableFrom    DateTime?
+  dueAt            DateTime?
+  totalPoints      Decimal          @default(0) @db.Decimal(8, 2)
+  creatorId        String
+  subjectId        String
+  classId          String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  creator          User             @relation("AssignmentCreator", fields: [creatorId], references: [id], onDelete: Restrict)
+  subject          Subject          @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  schoolClass      SchoolClass?     @relation(fields: [classId], references: [id], onDelete: SetNull)
+  questions        Question[]
+  submissions      Submission[]
+  testRooms        TestRoom[]
+
+  @@index([status, dueAt])
+  @@index([creatorId])
+}
+
+model Question {
+  id           String           @id @default(cuid())
+  assignmentId String
+  type         QuestionType
+  prompt       String
+  position     Int
+  points       Decimal          @default(1) @db.Decimal(8, 2)
+  required     Boolean          @default(true)
+  config       Json?
+  assignment   Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  options      QuestionOption[]
+  answers      Answer[]
+
+  @@unique([assignmentId, position])
+}
+
+model QuestionOption {
+  id         String   @id @default(cuid())
+  questionId String
+  text       String
+  position   Int
+  isCorrect  Boolean  @default(false)
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, position])
+}
+
+model Submission {
+  id                 String           @id @default(cuid())
+  assignmentId       String
+  roomId             String?
+  participantId      String?
+  studentId          String?
+  studentFirstName   String
+  studentLastName    String
+  studentIdentityKey String
+  attemptNo          Int              @default(1)
+  status             SubmissionStatus @default(IN_PROGRESS)
+  startedAt          DateTime         @default(now())
+  submittedAt        DateTime?
+  gradedAt           DateTime?
+  totalScore         Decimal?         @db.Decimal(8, 2)
+  feedback           String?
+  finishReason       String?
+  questionOrder      Json?
+  optionOrder        Json?
+  proctorWarnings    Int              @default(0)
+  lastSeenAt         DateTime?
+  reviewerId         String?
+  assignment         Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  room               TestRoom?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  participant        RoomParticipant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  student            StudentProfile?  @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  reviewer           User?            @relation("SubmissionReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  answers            Answer[]
+  gradeHistory       GradeHistory[]
+  proctorEvents      ProctorEvent[]
+
+  @@unique([assignmentId, studentId, attemptNo])
+  @@unique([assignmentId, studentIdentityKey, attemptNo])
+  @@index([studentId, status])
+  @@index([assignmentId, status])
+  @@index([assignmentId, status, lastSeenAt])
+  @@index([roomId, status])
+  @@index([participantId, status])
+}
+
+model TestRoom {
+  id              String          @id @default(cuid())
+  assignmentId    String
+  creatorId       String
+  joinCode        String          @unique @db.VarChar(6)
+  status          RoomStatus      @default(LOBBY)
+  lobbyTarget     Int
+  durationMinutes Int?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  snapshot        Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  assignment      Assignment      @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  creator         User            @relation(fields: [creatorId], references: [id], onDelete: Restrict)
+  participants    RoomParticipant[]
+  submissions     Submission[]
+
+  @@index([assignmentId, status])
+  @@index([creatorId, status])
+}
+
+model RoomParticipant {
+  id          String       @id @default(cuid())
+  roomId      String
+  firstName   String
+  lastName    String
+  sessionHash String       @unique @db.Char(64)
+  joinedAt    DateTime     @default(now())
+  lastSeenAt  DateTime     @default(now())
+  room        TestRoom     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+
+  @@index([roomId, joinedAt])
+}
+
+model ProctorEvent {
+  id           String     @id @default(cuid())
+  submissionId String
+  eventType    String
+  metadata     Json?
+  createdAt    DateTime   @default(now())
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId, createdAt])
+}
+
+model RoomJoinAttempt {
+  id              String    @id @default(cuid())
+  ipKey           String    @unique
+  failures        Int       @default(0)
+  windowStartedAt DateTime  @default(now())
+  blockedUntil    DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  @@index([updatedAt])
+  @@index([blockedUntil])
+}
+
+model Answer {
+  id             String       @id @default(cuid())
+  submissionId   String
+  questionId     String
+  textValue      String?
+  numericValue   Decimal?     @db.Decimal(14, 4)
+  jsonValue      Json?
+  awardedPoints  Decimal?     @db.Decimal(8, 2)
+  teacherComment String?
+  isCorrect      Boolean?
+  updatedAt      DateTime     @updatedAt
+  submission     Submission   @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  question       Question     @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  attachments    Attachment[]
+
+  @@unique([submissionId, questionId])
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  answerId     String
+  storageKey   String   @unique
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  createdAt    DateTime @default(now())
+  answer       Answer   @relation(fields: [answerId], references: [id], onDelete: Cascade)
+}
+
+model GradeHistory {
+  id           String     @id @default(cuid())
+  submissionId String
+  changedById  String
+  oldScore     Decimal?   @db.Decimal(8, 2)
+  newScore     Decimal    @db.Decimal(8, 2)
+  reason       String?
+  createdAt    DateTime   @default(now())
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  changedBy    User       @relation("GradeChangedBy", fields: [changedById], references: [id], onDelete: Restrict)
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model ResultExportOutbox {
+  id                 String   @id @default(cuid())
+  sourceSubmissionId String   @unique
+  payload            Json
+  attempts           Int      @default(0)
+  availableAt        DateTime @default(now())
+  lastError          String?
+  exportedAt         DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([exportedAt, availableAt])
+}

@@ -1,0 +1,10 @@
+import /etc/caddy/base.caddy
+
+https://{$SCHOOL_HOSTNAME}:443 {
+	tls {
+		ca https://acme-v02.api.letsencrypt.org/directory
+		dns duckdns {env.DUCKDNS_API_TOKEN}
+		resolvers 1.1.1.1 8.8.8.8
+	}
+	import school_routes
+}

@@ -1,0 +1,31 @@
+{
+  "name": "school-crm",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n API,WEB -c blue,green \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm --workspace @school-crm/api run start:dev",
+    "dev:web": "npm --workspace @school-crm/web run dev",
+    "test": "npm run build --workspace @school-crm/api && node --test apps/api/test/*.test.cjs apps/web/test/*.test.mjs",
+    "test:web": "node --test apps/web/test/*.test.mjs",
+    "build": "npm run build --workspace @school-crm/api && npm run build --workspace @school-crm/web",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "prisma": "^6.19.0",
+    "typescript": "^5.7.3"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.2"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  }
+}

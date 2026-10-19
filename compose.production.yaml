@@ -1,0 +1,139 @@
+name: zailyurpaq
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: schoolcrm
+      POSTGRES_USER: schoolcrm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - school_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U schoolcrm -d schoolcrm"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  results-postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: schoolresults
+      POSTGRES_USER: schoolcrm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - results_data:/var/lib/postgresql/data
+      - ./prisma/results-database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U schoolcrm -d schoolresults"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://schoolcrm:${POSTGRES_PASSWORD}@postgres:5432/schoolcrm?schema=public
+      RESULTS_DATABASE_URL: postgresql://schoolcrm:${POSTGRES_PASSWORD}@results-postgres:5432/schoolresults?schema=public
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      BOOTSTRAP_ADMIN_KEY: ${BOOTSTRAP_ADMIN_KEY:-}
+      WEB_ORIGIN: http://localhost
+      API_PORT: 4000
+      TRUST_PROXY_HOPS: 1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 4s
+      retries: 12
+      start_period: 45s
+    networks: [internal]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: /api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 4s
+      retries: 12
+      start_period: 30s
+    networks: [internal]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      SCHOOL_LAN_IP: ${SCHOOL_LAN_IP:-127.0.0.1}
+    ports:
+      - "0.0.0.0:${WEB_PORT:-8080}:80"
+      - "0.0.0.0:${WEB_HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    networks: [internal]
+
+  livekit:
+    image: livekit/livekit-server:v1.13.10
+    profiles: [media]
+    restart: unless-stopped
+    command: ["--bind", "0.0.0.0", "--node-ip", "${LIVEKIT_NODE_IP:-127.0.0.1}"]
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-}: ${LIVEKIT_API_SECRET:-}"
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: false
+    ports:
+      - "0.0.0.0:7881:7881/tcp"
+      - "0.0.0.0:7882:7882/udp"
+    networks: [internal]
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: [cloud]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on: [caddy]
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  school_data:
+  results_data:
+  caddy_data:
+  caddy_config:

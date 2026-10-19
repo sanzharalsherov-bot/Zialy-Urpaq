@@ -1,0 +1,52 @@
+node_modules/
+.next/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+backups/
+
+# Disposable LAN verification credentials
+tmp/lancheck-20261019/*.env*
+tmp/
+
+# Local archives and temporary output
+*.zip
+output/
+tmp/
+.env.duckdns
+
+# Build artifacts
+build/
+**/build/
+**/.next/
+**/dist/
+
+# Local databases and backups
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.backup
+
+# Local secrets
+*.pem
+*.key
+secrets/
+
+# Private development notes
+.codex-room-foundation-ledger.md
+
+# Next.js development cache
+**/.next-dev/
+
+# Local backups and generated TypeScript state
+*.bak
+*.tsbuildinfo
+
+docs/context/2026-10-19-development-handoff.md
+
+README-AUTH-PATCH.md

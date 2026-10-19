@@ -1,0 +1,5 @@
+FROM caddy:2.11.7-builder-alpine AS builder
+RUN xcaddy build v2.11.7 --with github.com/caddy-dns/duckdns@86ea11d23d37c85f3900a8c3093405e2bcd68d2e
+
+FROM caddy:2.11.7-alpine
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy

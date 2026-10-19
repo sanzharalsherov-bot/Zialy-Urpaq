@@ -1,0 +1,19 @@
+# Optional overlay: append AFTER production Compose and any isolated image override.
+# Supply both --env-file <installation.env> and --env-file .env.duckdns.
+services:
+  api:
+    environment:
+      LIVEKIT_PUBLIC_URL: wss://${SCHOOL_HOSTNAME:?Set SCHOOL_HOSTNAME in .env.duckdns}:${WEB_HTTPS_PORT:-8443}/livekit
+      WEB_ORIGIN: https://${SCHOOL_HOSTNAME:?Set SCHOOL_HOSTNAME in .env.duckdns}:${WEB_HTTPS_PORT:-8443}
+  caddy:
+    image: zailyurpaq-caddy-duckdns:2.11.7
+    build:
+      context: .
+      dockerfile: packaging/caddy/Dockerfile.duckdns
+    env_file:
+      - ${DUCKDNS_ENV_FILE:-.env.duckdns}
+    environment:
+      SCHOOL_HOSTNAME: ${SCHOOL_HOSTNAME:?Set SCHOOL_HOSTNAME in .env.duckdns}
+    volumes:
+      - ./Caddyfile.duckdns:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile:/etc/caddy/base.caddy:ro

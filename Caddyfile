@@ -1,0 +1,28 @@
+{
+	default_sni {$SCHOOL_LAN_IP}
+	servers :443 {
+		listener_wrappers {
+			http_redirect
+			tls
+		}
+	}
+}
+
+(school_routes) {
+	encode zstd gzip
+	@api path /api/*
+	reverse_proxy @api api:4000
+	handle_path /livekit* {
+		reverse_proxy livekit:7880
+	}
+	reverse_proxy web:3000
+}
+
+:80 {
+	import school_routes
+}
+
+https://{$SCHOOL_LAN_IP}:443 {
+	tls internal
+	import school_routes
+}
