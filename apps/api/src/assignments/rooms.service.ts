@@ -42,7 +42,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
           const now = time[0]?.now ?? new Date();
           if (now.getTime() < room.startedAt.getTime() + room.durationMinutes * 60_000) return;
           const attempts = await tx.submission.findMany({ where: { roomId: id, status: SubmissionStatus.IN_PROGRESS }, select: { id: true } });
-          for (const attempt of attempts) await this.finalizeRoomAttempt(tx, id, attempt.id, room.snapshot as RoomSnapshot | null, now);
+          for (const attempt of attempts) await this.finalizeRoomAttempt(tx, id, attempt.id, room.snapshot as RoomSnapshot | null, now, 'TIME_LIMIT');
           if (!attempts.length) await tx.testRoom.update({ where: { id }, data: { status: RoomStatus.FINISHED, finishedAt: now } });
         });
       }
@@ -372,7 +372,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       const now = nowRows[0]?.now ?? new Date();
       const expired = !!room.startedAt && room.durationMinutes !== null && now.getTime() >= room.startedAt.getTime() + room.durationMinutes * 60_000;
       if (expired) {
-        await this.finalizeRoomAttempt(tx, roomId, submission.id, room.snapshot as RoomSnapshot, now);
+        await this.finalizeRoomAttempt(tx, roomId, submission.id, room.snapshot as RoomSnapshot, now, 'TIME_LIMIT');
         return { saved: 0, finished: true, savedAt: now };
       }
       const snapshot = room.snapshot as RoomSnapshot | null;
@@ -466,7 +466,8 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       if (!room || room.status !== RoomStatus.RUNNING) throw new BadRequestException('Тест уже завершён');
       const nowRows = await tx.$queryRaw<Array<{ now: Date }>>`SELECT NOW() AS now`;
       const now = nowRows[0]?.now ?? new Date();
-      const result = await this.finalizeRoomAttempt(tx, roomId, submission.id, room.snapshot as RoomSnapshot, now);
+      const expired = !!room.startedAt && room.durationMinutes !== null && now.getTime() >= room.startedAt.getTime() + room.durationMinutes * 60_000;
+      const result = await this.finalizeRoomAttempt(tx, roomId, submission.id, room.snapshot as RoomSnapshot, now, expired ? 'TIME_LIMIT' : 'STUDENT_SUBMITTED');
       return { submissionId: submission.id, alreadySubmitted: false, ...result };
     }, { maxWait: 20_000, timeout: 20_000 });
     const rows = await this.prisma.submission.findMany({ where: { roomId, status: SubmissionStatus.GRADED, totalScore: { not: null } }, orderBy: [{ totalScore: 'desc' }, { submittedAt: 'asc' }], select: { id: true, studentFirstName: true, studentLastName: true, totalScore: true, submittedAt: true } });
