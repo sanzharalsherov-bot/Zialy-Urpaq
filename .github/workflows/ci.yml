@@ -9,6 +9,12 @@ on:
     branches:
       - dev
   workflow_dispatch:
+    inputs:
+      build_installer:
+        description: "Build a Windows installer (use only for a release candidate)"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -39,13 +45,14 @@ jobs:
 
   windows-installer:
     name: Build Windows installer
+    if: github.event_name == 'workflow_dispatch' && inputs.build_installer == true
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Build graphical installer
         shell: powershell
-        run: .\packaging\windows\Build-Installer.ps1
+        run: .\\packaging\\windows\\Build-Installer.ps1
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
