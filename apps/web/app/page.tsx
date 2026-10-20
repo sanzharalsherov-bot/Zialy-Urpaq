@@ -119,7 +119,7 @@ export default function Home() {
   const [studentCode, setStudentCode] = useState('');
   const [studentFirstName, setStudentFirstName] = useState('');
   const [studentLastName, setStudentLastName] = useState('');
-  const [view, setView] = useState<'overview' | 'assignments' | 'create' | 'results' | 'student' | 'users'>('overview');
+  const [view, setView] = useState<'overview' | 'assignments' | 'create' | 'results' | 'student' | 'users' | 'school'>('overview');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [dashboard, setDashboard] = useState({ activeAssignments: 0, submissionsAwaitingReview: 0, gradedSubmissions: 0, totalSubmissions: 0 });
@@ -158,6 +158,15 @@ export default function Home() {
   const [accountPassword, setAccountPassword] = useState('');
   const [studentAccessCodeInput, setStudentAccessCodeInput] = useState('');
   const [studentAccessCodeConfigured, setStudentAccessCodeConfigured] = useState(false);
+  const [schoolClasses, setSchoolClasses] = useState<any[]>([]);
+  const [schoolStudents, setSchoolStudents] = useState<any[]>([]);
+  const [classNameDraft, setClassNameDraft] = useState('');
+  const [academicYearDraft, setAcademicYearDraft] = useState(String(new Date().getFullYear()) + '-' + String(new Date().getFullYear() + 1));
+  const [newStudentFirstName, setNewStudentFirstName] = useState('');
+  const [newStudentLastName, setNewStudentLastName] = useState('');
+  const [newStudentNo, setNewStudentNo] = useState('');
+  const [newStudentClassId, setNewStudentClassId] = useState('');
+  const [assignmentClassId, setAssignmentClassId] = useState('');
   const [manualGrades, setManualGrades] = useState<Record<string, string>>({});
   const [restoringSession, setRestoringSession] = useState(true);
   const [clock, setClock] = useState(Date.now());
@@ -188,7 +197,7 @@ export default function Home() {
     setAssignments([]); setAvailable([]); setAccounts([]); setAnswers({}); setManualGrades({});
     setPassword(''); setStudentCode(''); setStudentFirstName(''); setStudentLastName(''); setEmail('');
     setAccountPassword(''); setAccountEmail(''); setAccountFirstName(''); setAccountLastName('');
-    setStudentAccessCodeInput(''); setStudentAccessCodeConfigured(false);
+    setStudentAccessCodeInput(''); setStudentAccessCodeConfigured(false); setSchoolClasses([]); setSchoolStudents([]); setClassNameDraft(''); setNewStudentFirstName(''); setNewStudentLastName(''); setNewStudentNo(''); setNewStudentClassId(''); setAssignmentClassId('');
     setTitle(''); setSubjectName(''); setDescription(''); setQuestions([newQuestion()]);
     setTimeLimit(''); setAvailableFrom(''); setDueAt(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setRoomCode('');
     setDashboard({ activeAssignments: 0, submissionsAwaitingReview: 0, gradedSubmissions: 0, totalSubmissions: 0 });
@@ -837,7 +846,7 @@ export default function Home() {
       </aside>
       <section className="content" id="overview">
         <header className="topbar">
-          <div><span className="eyebrow">{t(isStaff ? 'УЧЕБНАЯ ПЛАТФОРМА' : 'ЛИЧНЫЙ КАБИНЕТ УЧЕНИКА')} </span><h1>{t(view === 'create' ? 'Создать задание' : view === 'assignments' ? 'Тесты и задания' : view === 'results' ? 'Результаты' : view === 'student' ? 'Мои задания' : view === 'users' ? 'Аккаунты' : 'Обзор')}</h1></div>
+          <div><span className="eyebrow">{t(isStaff ? 'УЧЕБНАЯ ПЛАТФОРМА' : 'ЛИЧНЫЙ КАБИНЕТ УЧЕНИКА')} </span><h1>{t(view === 'create' ? 'Создать задание' : view === 'assignments' ? 'Тесты и задания' : view === 'results' ? 'Результаты' : view === 'student' ? 'Мои задания' : view === 'users' ? 'Аккаунты' : view === 'school' ? 'Классы и ученики' : 'Обзор')}</h1></div>
           <div className="topbarTools">{languagePicker}<span className="devBadge"><i /> {t(user.role === 'ADMIN' ? 'Администратор' : isStaff ? 'Преподаватель' : 'Ученик')}</span></div>
         </header>
         {message && <div className="notice globalNotice" role="status"><span>{t(message)}</span><button onClick={() => setMessage('')} aria-label={t("Закрыть уведомление")}>×</button></div>}
