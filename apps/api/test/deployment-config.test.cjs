@@ -120,3 +120,12 @@ test('CI recovery drill restricts destructive restore operations to local test d
   assert.match(recovery, /productionDatabasesTouched:\s*false/u);
   assert.match(recovery, /Both CI databases must share the same local PostgreSQL service/u);
 });
+
+test('plain HTTP is bound to localhost and never opened to the school LAN', () => {
+  assert.match(compose, /"127\\.0\\.0\\.1:\$\\{WEB_PORT:-8080\\}:80"/u);
+  assert.doesNotMatch(compose, /"0\\.0\\.0\\.0:\$\\{WEB_PORT:-8080\\}:80"/u);
+  assert.doesNotMatch(installer, /DisplayName = 'Zaily Urpaq School Platform'; Protocol = 'TCP'; LocalPort = 8080/u);
+  assert.match(installer, /http:\/\/127\\.0\\.0\\.1:8080\/api\/health/u);
+  assert.match(installer, /http:\/\/localhost:8080/u);
+  assert.match(caddy, /:80\\s*\\{\\s*import school_routes/u);
+});
