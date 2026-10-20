@@ -63,6 +63,14 @@ test('school LAN has persistent HTTPS and WSS configuration', () => {
   assert.match(installer, /lan-root-ca\.crt/u);
 });
 
+test('Windows installer avoids interactive certificate prompts and continues if trust-store writes are blocked', () => {
+  assert.match(installer, /X509Certificates\.X509Store/u);
+  assert.match(installer, /StoreLocation\]::CurrentUser/u);
+  assert.match(installer, /CERTIFICATE_TRUST_PENDING/u);
+  assert.match(installer, /сервер и база уже запущены, установка продолжится/iu);
+  assert.doesNotMatch(installer, /Import-Certificate -FilePath \$lanCertificateFile/u);
+});
+
 test('Windows Firewall opens only HTTPS and LiveKit ports to the private local subnet', () => {
   for (const [displayName, protocol, port] of [
     ['Zaily Urpaq School HTTPS', 'TCP', '8443'],

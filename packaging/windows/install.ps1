@@ -375,7 +375,51 @@ $certificateExport = Invoke-DockerCommand @('cp', "${composeProjectName}-caddy-1
 if ($certificateExport.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $lanCertificateFile)) {
   throw 'Не удалось сохранить корневой сертификат локального HTTPS. Проверьте логи Caddy и повторите установку.'
 }
-Import-Certificate -FilePath $lanCertificateFile -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
+# Import the Caddy local root without launching certificate/UI prompts from the hidden
+# non-interactive PowerShell worker. If policy blocks trust-store writes, keep the
+# platform running and report exactly how to trust the saved public root certificate.
+$certificateTrustPending = $false
+$rootCertificate = $null
+$rootStore = $null
+try {
+  $rootCertificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList $lanCertificateFile
+  $caExtension = $rootCertificate.Extensions | Where-Object { $_.Oid.Value -eq '2.5.29.19' } | Select-Object -First 1
+  if (-not $caExtension) { throw 'The saved certificate has no CA basic-constraints extension.' }
+  $basicConstraints = New-Object System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension -ArgumentList $caExtension, $false
+  if (-not $basicConstraints.CertificateAuthority) { throw 'The saved certificate is not a CA certificate.' }
+
+  $rootStore = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+    [System.Security.Cryptography.X509Certificates.StoreName]::Root,
+    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+  )
+  $rootStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+  $alreadyTrusted = $false
+  foreach ($storedCertificate in $rootStore.Certificates) {
+    if ($storedCertificate.Thumbprint -eq $rootCertificate.Thumbprint) {
+      $alreadyTrusted = $true
+      break
+    }
+  }
+  if (-not $alreadyTrusted) { $rootStore.Add($rootCertificate) }
+  $trustVerified = $false
+  foreach ($storedCertificate in $rootStore.Certificates) {
+    if ($storedCertificate.Thumbprint -eq $rootCertificate.Thumbprint) {
+      $trustVerified = $true
+      break
+    }
+  }
+  if (-not $trustVerified) { throw 'Windows did not confirm the root certificate in the CurrentUser Root store.' }
+  Write-Host 'Корневой HTTPS-сертификат добавлен в доверенные сертификаты текущего пользователя Windows.' -ForegroundColor Green
+} catch {
+  $certificateTrustPending = $true
+  Write-Host 'CERTIFICATE_TRUST_PENDING'
+  Write-Host 'Предупреждение: Windows не разрешила автоматически добавить корневой HTTPS-сертификат. Сервер и база уже запущены, установка продолжится.' -ForegroundColor Yellow
+  Write-Host "Файл сертификата сохранён: $lanCertificateFile" -ForegroundColor Yellow
+  Write-Host 'Для доверенного HTTPS попросите администратора установить этот сертификат в хранилище «Доверенные корневые центры сертификации» текущего пользователя Windows. На других школьных устройствах доверие также настраивается отдельно.' -ForegroundColor Yellow
+} finally {
+  if ($rootStore) { try { $rootStore.Close(); $rootStore.Dispose() } catch {} }
+  if ($rootCertificate) { $rootCertificate.Dispose() }
+}
 try {
   # Remove the legacy LAN-wide HTTP rule from older installations.
   Remove-NetFirewallRule -DisplayName 'Zaily Urpaq School Platform' -ErrorAction SilentlyContinue

@@ -518,18 +518,30 @@ internal sealed class InstallerForm : Form
             status.ForeColor = Color.FromArgb(35, 130, 85);
             string addressText = addresses.ToString().Trim();
             bool adminCredentialsUnchanged = diagnostics.ToString().Contains("ADMIN_CREDENTIALS_NOT_CHANGED");
+            bool certificateTrustPending = diagnostics.ToString().Contains("CERTIFICATE_TRUST_PENDING");
             hint.Text = (String.IsNullOrWhiteSpace(addressText) ? "Сайт откроется в браузере." : addressText)
                 + (adminCredentialsUnchanged
                     ? "\r\nСуществующие аккаунты сохранены. Пароль из этой формы не применялся. Используйте ярлык восстановления пароля администратора."
                     : (String.IsNullOrWhiteSpace(adminEmailUsed) ? "" : "\r\nВход администратора: " + adminEmailUsed)
                       + (String.IsNullOrWhiteSpace(studentAccessCodeUsed) ? "" : "\r\nОбщий код учеников: " + studentAccessCodeUsed))
+                + (certificateTrustPending ? "\r\nВнимание: HTTPS-сертификат не добавлен автоматически. См. сообщение о сертификате." : "")
                 + (String.IsNullOrWhiteSpace(launcherWarning) ? "" : "\r\n" + launcherWarning);
             hint.Height = 72;
-            hint.ForeColor = Color.FromArgb(35, 130, 85);
+            hint.ForeColor = certificateTrustPending ? Color.DarkOrange : Color.FromArgb(35, 130, 85);
             installButton.Text = "Закрыть";
             installButton.Click -= StartInstallation;
             installButton.Click += delegate { Close(); };
-            MessageBox.Show(this, "Платформа установлена и готова к работе.", "Готово", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (certificateTrustPending)
+            {
+                string certificatePath = Path.Combine(installationPath, "lan-root-ca.crt");
+                MessageBox.Show(this,
+                    "Платформа запущена, но Windows не разрешила автоматически добавить её корневой HTTPS-сертификат.\r\n\r\nФайл сохранён здесь:\r\n" + certificatePath + "\r\n\r\nДля открытия сайта без предупреждения о сертификате установите этот сертификат в «Доверенные корневые центры сертификации» текущего пользователя Windows. На других школьных устройствах сертификат также нужно установить отдельно. Не обходите предупреждения TLS.",
+                    "Платформа запущена: требуется доверие к HTTPS-сертификату", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            else
+            {
+                MessageBox.Show(this, "Платформа установлена и готова к работе.", "Готово", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
         }
         else
         {
