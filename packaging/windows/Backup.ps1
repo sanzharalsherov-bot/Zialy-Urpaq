@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $projectDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $backupDir = Join-Path $projectDir 'backups'
 $composeProjectFile = Join-Path $projectDir '.compose-project'
