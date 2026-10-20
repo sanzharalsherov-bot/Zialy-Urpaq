@@ -13,6 +13,9 @@ export class JoinRoomV2Dto {
   @IsString() @Matches(/^\d{6}$/u)
   code!: string;
 
+  @IsString() @Matches(/^[A-Za-z0-9_-]{32,80}$/u)
+  deviceId!: string;
+
   @IsString() @MinLength(1) @MaxLength(100) @Matches(/\S/u)
   firstName!: string;
 
@@ -38,6 +41,6 @@ export class SaveRoomAnswersDto {
 }
 
 export class RoomProctorEventDto {
-  @IsString() @IsIn(['VISIBILITY_HIDDEN', 'VISIBILITY_RESTORED'])
-  eventType!: 'VISIBILITY_HIDDEN' | 'VISIBILITY_RESTORED';
+  @IsString() @IsIn(['VISIBILITY_HIDDEN', 'VISIBILITY_RESTORED', 'SCREEN_SHARE_ENDED', 'SCREEN_SHARE_RESTORED'])
+  eventType!: 'VISIBILITY_HIDDEN' | 'VISIBILITY_RESTORED' | 'SCREEN_SHARE_ENDED' | 'SCREEN_SHARE_RESTORED';
 }

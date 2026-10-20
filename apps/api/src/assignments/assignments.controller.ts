@@ -89,6 +89,11 @@ export class AssignmentsController {
     return this.assignments.listAvailable(user);
   }
 
+  @Get('student/results')
+  listStudentResults(@CurrentUser() user: AuthenticatedUser) {
+    return this.assignments.listStudentResults(user);
+  }
+
   @Post('student/assignments/:id/start')
   start(
     @Param('id') id: string,

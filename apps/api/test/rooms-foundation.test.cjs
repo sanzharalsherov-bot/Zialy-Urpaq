@@ -15,7 +15,7 @@ function fakePrisma() {
   const prisma = {
     rooms,
     assignment: { findFirst: async ({ where }) => where.id === 'assignment-1' && (!where.creatorId || where.creatorId === 'teacher-1')
-      ? { id: 'assignment-1', creatorId: 'teacher-1', status: 'PUBLISHED', timeLimitMinutes: 25 } : null },
+      ? { id: 'assignment-1', creatorId: 'teacher-1', status: 'PUBLISHED', timeLimitMinutes: 25, questions: [{ id: 'q1', type: 'SINGLE_CHOICE', options: [{ isCorrect: true }, { isCorrect: false }] }] } : null },
     testRoom: {
       create: async ({ data }) => {
         const row = { id: `room-${rooms.length + 1}`, ...data, status: 'LOBBY', startedAt: null, _count: { participants: 0 }, assignment: { title: 'Math' } };
@@ -52,7 +52,7 @@ function fakeJoinPrisma(status = 'LOBBY') {
       findMany: async ({ where }) => submissions.filter(s => s.roomId === where.roomId && s.status === where.status).map(s => ({ id: s.id, studentFirstName: s.studentFirstName, studentLastName: s.studentLastName, totalScore: s.totalScore, submittedAt: s.submittedAt })),
     },
     proctorEvent: {
-      findFirst: async ({ where, orderBy }) => proctorEvents.filter(event => event.submissionId === where.submissionId).sort((a, b) => b.createdAt - a.createdAt)[0] ?? null,
+      findFirst: async ({ where, orderBy }) => proctorEvents.filter(event => event.submissionId === where.submissionId && (!where.eventType?.in || where.eventType.in.includes(event.eventType))).sort((a, b) => b.createdAt - a.createdAt)[0] ?? null,
       create: async ({ data }) => { const event = { id: `proctor-${proctorEvents.length + 1}`, createdAt: new Date(Date.now() + proctorEvents.length), ...data }; proctorEvents.push(event); return event; },
     },
     testRoom: { findUnique: async ({ where }) => where.joinCode ? (where.joinCode === room.joinCode ? { id: room.id } : null) : room, update: async ({ data }) => Object.assign(room, data) },
@@ -80,10 +80,45 @@ test('creates separate six-digit room codes for the same assignment', async () =
   assert.equal(one.durationMinutes, 25);
 });
 
+test('room creation rejects unsupported or ungradable question types before reserving a code', async () => {
+  const db = fakePrisma();
+  const original = db.assignment.findFirst;
+  db.assignment.findFirst = async args => {
+    const assignment = await original(args);
+    return assignment ? { ...assignment, questions: [{ id: 'numeric-q', type: 'NUMERIC', options: [] }] } : null;
+  };
+  const service = new RoomsService(db);
+  await assert.rejects(
+    () => service.createRoom('assignment-1', { lobbyTarget: 10 }, { sub: 'teacher-1', role: 'TEACHER' }),
+    error => error.getStatus() === 400 && /только вопросы/u.test(error.message),
+  );
+  assert.equal(db.rooms.length, 0);
+});
+
 test('teacher scope prevents access to another teacher assignment', async () => {
   const service = new RoomsService(fakePrisma());
   await assert.rejects(() => service.createRoom('assignment-1', { lobbyTarget: 10 }, { sub: 'teacher-2', role: 'TEACHER' }), e => e.getStatus() === 404);
   await assert.rejects(() => service.createRoom('missing', { lobbyTarget: 10 }, { sub: 'teacher-1', role: 'TEACHER' }), e => e.getStatus() === 404);
+});
+
+test('teacher cannot read or analyze another teacher room', async () => {
+  const queries = [];
+  const db = {
+    testRoom: {
+      findFirst: async ({ where }) => { queries.push({ operation: 'findFirst', where }); return null; },
+      findMany: async ({ where }) => { queries.push({ operation: 'findMany', where }); return []; },
+    },
+    assignment: { findFirst: async ({ where }) => { queries.push({ operation: 'assignment', where }); return null; } },
+  };
+  const service = new RoomsService(db);
+  const actor = { sub: 'teacher-2', role: 'TEACHER' };
+  await assert.rejects(() => service.getRoom('room-owned-by-teacher-1', actor), error => error.getStatus() === 404);
+  await assert.rejects(() => service.roomAnalytics('room-owned-by-teacher-1', actor), error => error.getStatus() === 404);
+  await service.listRooms(actor, 'assignment-1');
+  assert.equal(queries[0].where.creatorId, 'teacher-2');
+  assert.equal(queries[1].where.creatorId, 'teacher-2');
+  assert.equal(queries[2].where.creatorId, 'teacher-2');
+  assert.equal(queries[2].where.assignmentId, 'assignment-1');
 });
 
 test('room code collision retries with a new code', async () => {
@@ -131,6 +166,21 @@ test('valid room token reconnects to its own attempt; unrelated token is denied'
   await assert.rejects(() => service.joinRoom('004271', 'Aruzhan', 'Sapar', 'x'.repeat(43)), error => error.getStatus() === 404);
 });
 
+test('valid room session can reconnect even when the device is throttled for wrong room codes', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const ip = '192.168.10.51'; const device = 'c'.repeat(64);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar', undefined, ip, device);
+  for (let i = 0; i < 3; i++) {
+    await assert.rejects(
+      () => service.joinRoom('999999', 'Aruzhan', 'Sapar', undefined, ip, device),
+      error => error.getStatus() === (i === 2 ? 429 : 404),
+    );
+  }
+  const resumed = await service.joinRoom('004271', 'Aruzhan', 'Sapar', joined.sessionToken, ip, device);
+  assert.equal(resumed.resumed, true);
+  assert.equal(resumed.attemptId, joined.attemptId);
+});
+
 test('student snapshot never exposes answer keys', async () => {
   const db = fakeJoinPrisma(); const service = new RoomsService(db);
   const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
@@ -145,6 +195,21 @@ test('unknown room code does not reveal whether another code exists', async () =
   await assert.rejects(() => service.joinRoom('999999', 'Aruzhan', 'Sapar'), error => error.getStatus() === 404 && error.message.includes('Комната не найдена'));
   await assert.rejects(() => service.joinRoom('999999', 'Aruzhan', 'Sapar'), error => error.getStatus() === 404);
   await assert.rejects(() => service.joinRoom('999999', 'Different', 'Name'), error => error.getStatus() === 429);
+});
+
+test('invalid room-code attempts are blocked per device, not for every student behind one school IP', async () => {
+  const db = fakeJoinPrisma();
+  const service = new RoomsService(db);
+  const ip = '192.168.10.50';
+  const firstDevice = 'a'.repeat(64);
+  const secondDevice = 'b'.repeat(64);
+  for (let i = 0; i < 2; i++) {
+    await assert.rejects(() => service.joinRoom('999999', 'Student', 'One', undefined, ip, firstDevice), error => error.getStatus() === 404);
+    await assert.rejects(() => service.joinRoom('999999', 'Student', 'Two', undefined, ip, secondDevice), error => error.getStatus() === 404);
+  }
+  await assert.rejects(() => service.joinRoom('999999', 'Student', 'One', undefined, ip, firstDevice), error => error.getStatus() === 429);
+  await assert.rejects(() => service.joinRoom('999999', 'Student', 'Two', undefined, ip, secondDevice), error => error.getStatus() === 429);
+  assert.ok(db.audit.some(entry => entry.action === 'ROOM_CODE_REJECTED'));
 });
 
 test('running room rejects tokenless entry even when the supplied name matches the roster', async () => {
@@ -193,8 +258,86 @@ test('room answers autosave securely and submit calculates score from the frozen
   assert.equal('isCorrect' in db.answers[0], false, 'Correctness is not exposed during autosave');
   const result = await service.submitRoom('room-join', joined.sessionToken);
   assert.equal(result.score, 1); assert.equal(result.correctCount, 1); assert.equal(result.rank, 1);
+  assert.equal(db.submissions[0].finishReason, 'STUDENT_SUBMITTED');
   assert.equal(result.top[0].firstName, 'Aruzhan');
   assert.equal(db.room.status, 'FINISHED');
+});
+
+test('autosave rechecks attempt status after acquiring the row lock', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+  db.room.status = 'RUNNING'; db.room.startedAt = new Date(); db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+  const originalQuery = db.$queryRaw;
+  db.$queryRaw = async (strings, ...values) => {
+    const query = strings.join('?');
+    if (query.includes('FROM "Submission"') && query.includes('FOR UPDATE')) db.submissions[0].status = 'GRADED';
+    return originalQuery(strings, ...values);
+  };
+  await assert.rejects(
+    () => service.saveRoomAnswers('room-join', joined.sessionToken, { answers: [{ questionId: 'q1', value: 'a' }] }),
+    error => error.getStatus() === 404,
+  );
+  assert.equal(db.answers.length, 0);
+});
+
+test('concurrent duplicate submit becomes idempotent after the row lock', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+  db.room.status = 'RUNNING'; db.room.startedAt = new Date(); db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+  const originalQuery = db.$queryRaw;
+  db.$queryRaw = async (strings, ...values) => {
+    const query = strings.join('?');
+    if (query.includes('FROM "Submission"') && query.includes('FOR UPDATE')) db.submissions[0].status = 'GRADED';
+    return originalQuery(strings, ...values);
+  };
+  const result = await service.submitRoom('room-join', joined.sessionToken);
+  assert.equal(result.alreadySubmitted, true);
+  assert.equal(db.submissions[0].status, 'GRADED');
+});
+
+test('room mutations acquire room lock before submission lock', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+  db.room.status = 'RUNNING'; db.room.startedAt = new Date(); db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+  const originalQuery = db.$queryRaw;
+  let statements = [];
+  db.$queryRaw = async (strings, ...values) => {
+    statements.push(strings.join('?'));
+    return originalQuery(strings, ...values);
+  };
+  const assertLockOrder = () => {
+    const roomLock = statements.findIndex(query => query.includes('FROM "TestRoom"') && query.includes('FOR UPDATE'));
+    const submissionLock = statements.findIndex(query => query.includes('FROM "Submission"') && query.includes('FOR UPDATE'));
+    assert.ok(roomLock >= 0, 'room row must be locked');
+    assert.ok(submissionLock > roomLock, 'room lock must precede submission lock');
+  };
+  await service.saveRoomAnswers('room-join', joined.sessionToken, { answers: [{ questionId: 'q1', value: 'a' }] });
+  assertLockOrder();
+  statements = [];
+  await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'VISIBILITY_HIDDEN' });
+  assertLockOrder();
+  statements = [];
+  await service.submitRoom('room-join', joined.sessionToken);
+  assertLockOrder();
+});
+
+test('room submission after deadline is recorded as TIME_LIMIT', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+
+  db.room.status = 'RUNNING';
+  db.room.startedAt = new Date('2026-10-17T23:00:00Z');
+  db.room.durationMinutes = 30;
+  db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+
+  await service.submitRoom('room-join', joined.sessionToken);
+
+  assert.equal(db.submissions[0].status, 'GRADED');
+  assert.equal(db.submissions[0].finishReason, 'TIME_LIMIT');
 });
 
 test('room answer endpoint rejects fabricated choice ids', async () => {
@@ -239,6 +382,53 @@ test('third visibility episode grades and preserves saved answers with violation
   assert.equal(db.answers[0].jsonValue, 'a');
   assert.equal(db.answers[0].isCorrect, true);
   assert.equal(db.submissions[0].totalScore, 1);
+});
+
+test('manual screen-share stop counts once and restarting sharing permits a later violation episode', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+  db.room.status = 'RUNNING'; db.room.startedAt = new Date(); db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+  const first = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' });
+  const duplicate = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' });
+  assert.equal(first.warnings, 1);
+  assert.equal(duplicate.warnings, 1);
+  assert.equal(duplicate.duplicate, true);
+  await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_RESTORED' });
+  const second = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' });
+  assert.equal(second.warnings, 2);
+});
+
+test('deadline takes precedence over a proctor event received after time expires', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+  db.room.status = 'RUNNING';
+  db.room.startedAt = new Date('2026-10-17T23:00:00.000Z');
+  db.room.durationMinutes = 30;
+  db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+  const result = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' });
+  assert.equal(result.finished, true);
+  assert.equal(db.submissions[0].finishReason, 'TIME_LIMIT');
+  assert.equal(db.submissions[0].proctorWarnings, 0);
+  assert.equal(db.proctorEvents.length, 0);
+});
+
+test('overlapping visibility and screen-share violations are tracked as independent episodes', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+  db.room.status = 'RUNNING'; db.room.startedAt = new Date(); db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+  assert.equal((await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'VISIBILITY_HIDDEN' })).warnings, 1);
+  assert.equal((await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' })).warnings, 2);
+  await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_RESTORED' });
+  const duplicateVisibility = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'VISIBILITY_HIDDEN' });
+  assert.equal(duplicateVisibility.warnings, 2);
+  assert.equal(duplicateVisibility.duplicate, true);
+  await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'VISIBILITY_RESTORED' });
+  const nextScreenViolation = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' });
+  assert.equal(nextScreenViolation.warnings, 3);
+  assert.equal(nextScreenViolation.finished, true);
 });
 
 test('room analytics reports per-question accuracy and excludes unfinished attempts', async () => {

@@ -107,6 +107,9 @@ footer{padding:24px 0;color:#9b91a0;font-size:10px}footer strong{color:#5d176a}
 .manualGradeControls .secondaryButton{min-height:42px;font-size:10px}
 .gradeFullButton{color:#3e7953;border-color:#d7e9dc}.gradeFullButton:hover{background:#f0f8f2;border-color:#badac4}
 .gradeZeroButton{color:#a14855;border-color:#efdde0}.gradeZeroButton:hover{background:#fff5f6;border-color:#e5c2c8}
+.teacherCommentField{display:flex;flex-direction:column;gap:6px;min-width:180px;color:#5c4962;font-size:10px;font-weight:750;flex:1 1 100%}
+.teacherCommentField textarea{width:100%;min-height:72px;resize:vertical;border:1px solid #e5d9e8;border-radius:10px;padding:10px 12px;color:#32193b;background:#fff;font:500 12px/1.5 "DM Sans",sans-serif}
+.teacherCommentField textarea:focus{outline:3px solid #a86db444;border-color:#925b9e}
 .manualReviewFooter{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:14px 0;padding:16px;border:1px solid #e9ddec;border-radius:14px;background:#faf7fb}
 .manualReviewFooter p{margin:5px 0 0;color:#897d8d;font-size:10px;line-height:1.5}.manualReviewFooter .primaryButton{min-width:175px}
 .answerPoints{display:inline-block;margin-top:8px}
@@ -160,3 +163,15 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible,te
 /* Screen sharing for live test rooms. */
 .roomSharePanel,.teacherSharePanel{display:grid;gap:12px;padding:14px 16px;border:1px solid #e5d9e8;border-radius:14px;background:#fcf9fd}.roomSharePanel{grid-template-columns:minmax(0,1fr) auto;align-items:center;margin:12px 0 16px}.roomSharePanel>div{display:grid;gap:5px}.roomSharePanel small{color:var(--muted);font-size:11px;line-height:1.5}.teacherSharePanel{grid-column:1/-1;width:100%;margin-top:8px}.sharePanelHeading{display:flex;justify-content:space-between;gap:12px;align-items:center}.sharePanelHeading span{color:var(--muted);font-size:12px}.shareVideoGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:12px}.shareVideoGrid article{min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#1d1520}.shareVideoGrid video{display:block;width:100%;aspect-ratio:16/10;object-fit:contain;background:#17121a}.shareVideoGrid b{display:block;padding:8px 10px;color:#fff;font-size:12px}.roomMonitorWrap{grid-column:1/-1;width:100%}.testRoomCard{flex-wrap:wrap}
 @media(max-width:600px){.roomSharePanel{grid-template-columns:1fr}.roomSharePanel button{width:100%}.sharePanelHeading{align-items:flex-start;flex-direction:column}.testRoomCard{align-items:flex-start}}
+
+
+/* Student result history and teacher feedback */
+.studentHistoryHead{margin-top:24px;padding-top:18px;border-top:1px solid var(--line)}
+.studentAnswerReview{margin:22px 0}
+.studentAnswerReview>h4{margin-bottom:10px}
+.studentAnswerReviewRow{padding:14px 0;border-top:1px solid var(--line)}
+.studentAnswerReviewRow>b{display:block;font-size:12px;line-height:1.6;color:var(--ink)}
+.studentAnswerReviewRow>p{font-size:12px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:var(--muted)}
+.studentAnswerReviewRow .status{display:inline-flex;margin-top:4px}
+.studentResultPanel .manualReviewFooter p{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:720px){.studentHistoryHead{align-items:flex-start}.studentAssignment>.secondaryButton{margin-left:auto}}

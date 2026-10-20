@@ -1,7 +1,7 @@
 // Disposable LAN stack only. Stores temporary credentials under ignored tmp/.
 import https from 'node:https';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
@@ -45,11 +45,13 @@ const assignment = await request('/assignments', 'POST', {
 }, staff);
 await request(`/assignments/${assignment.id}/publish`, 'PATCH', undefined, staff);
 const room = await request(`/assignments/${assignment.id}/rooms`, 'POST', { lobbyTarget: 10, durationMinutes: 30 }, staff);
-const first = await request('/student/rooms/join-v2', 'POST', { code: room.joinCode, firstName: 'Same', lastName: 'Student' });
-const second = await request('/student/rooms/join-v2', 'POST', { code: room.joinCode, firstName: 'Same', lastName: 'Student' });
+const firstDeviceId = randomUUID();
+const secondDeviceId = randomUUID();
+const first = await request('/student/rooms/join-v2', 'POST', { code: room.joinCode, firstName: 'Same', lastName: 'Student', deviceId: firstDeviceId });
+const second = await request('/student/rooms/join-v2', 'POST', { code: room.joinCode, firstName: 'Same', lastName: 'Student', deviceId: secondDeviceId });
 assert.notEqual(first.participantId, second.participantId);
 await request(`/rooms/${room.id}/start`, 'POST', undefined, staff);
-await request('/student/rooms/join-v2', 'POST', { code: room.joinCode, firstName: 'Same', lastName: 'Student' }, undefined, 400);
+await request('/student/rooms/join-v2', 'POST', { code: room.joinCode, firstName: 'Same', lastName: 'Student', deviceId: randomUUID() }, undefined, 400);
 const view = await request(`/student/rooms/${room.id}/v2`, 'GET', undefined, first.sessionToken);
 assert(!JSON.stringify(view.questions).includes('isCorrect'));
 const question = view.questions[0];
@@ -57,7 +59,7 @@ const correct = question.options.find(option => option.text === 'A').id;
 for (const student of [first, second]) {
   await request(`/student/rooms/${room.id}/v2/answers`, 'PATCH', { answers: [{ questionId: question.id, value: correct }] }, student.sessionToken);
 }
-const resumed = await request('/student/rooms/join-v2', 'POST', { code: room.joinCode, firstName: 'Same', lastName: 'Student', sessionToken: first.sessionToken });
+const resumed = await request('/student/rooms/join-v2', 'POST', { code: room.joinCode, firstName: 'Same', lastName: 'Student', deviceId: firstDeviceId, sessionToken: first.sessionToken });
 assert.equal(resumed.attemptId, first.attemptId);
 const restored = await request(`/student/rooms/${room.id}/v2`, 'GET', undefined, first.sessionToken);
 assert.equal(restored.submission.answers[0].jsonValue, correct);

@@ -54,6 +54,7 @@ Add-MissingSetting 'LIVEKIT_API_KEY' ('lk_' + (New-MediaSecret 18))
 Add-MissingSetting 'LIVEKIT_API_SECRET' (New-MediaSecret 48)
 Add-MissingSetting 'SCHOOL_LAN_IP' $LanIp
 Add-MissingSetting 'WEB_HTTPS_PORT' ([string]$httpsPort)
+Add-MissingSetting 'WEB_ORIGIN' "https://${LanIp}:${httpsPort}"
 Add-MissingSetting 'LIVEKIT_PUBLIC_URL' "wss://${LanIp}:${httpsPort}/livekit"
 Add-MissingSetting 'LIVEKIT_NODE_IP' $LanIp
 

@@ -59,7 +59,7 @@ function Invoke-DockerCommand([string[]]$Arguments) {
   return [pscustomobject]@{ Output = $output; ExitCode = $exitCode }
 }
 
-function Set-DatabaseRolePassword([string]$ContainerName, [string]$DesiredPassword) {
+function Set-DatabaseRolePassword([string]$ContainerName, [string]$DatabaseName, [string]$DesiredPassword) {
   # The official PostgreSQL image allows local socket access inside the
   # container. Feed SQL over stdin so this generated secret is not added to
   # Docker's process command line or installer logs.
@@ -67,7 +67,7 @@ function Set-DatabaseRolePassword([string]$ContainerName, [string]$DesiredPasswo
   $sql = "ALTER ROLE schoolcrm WITH PASSWORD '$escapedPassword';"
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo
   $startInfo.FileName = $dockerCli
-  $startInfo.Arguments = "exec -i -u postgres $ContainerName psql -v ON_ERROR_STOP=1 -U schoolcrm -d schoolcrm"
+  $startInfo.Arguments = "exec -i -u postgres $ContainerName psql -v ON_ERROR_STOP=1 -U schoolcrm -d $DatabaseName"
   $startInfo.UseShellExecute = $false
   $startInfo.CreateNoWindow = $true
   $startInfo.RedirectStandardInput = $true
@@ -271,7 +271,7 @@ $databaseReady = $false
 $databaseError = ''
 for ($attempt = 0; $attempt -lt 30; $attempt++) {
   try {
-    Set-DatabaseRolePassword -ContainerName $postgresContainer -DesiredPassword $dbPassword
+    Set-DatabaseRolePassword -ContainerName $postgresContainer -DatabaseName 'schoolcrm' -DesiredPassword $dbPassword
     $databaseReady = $true
     break
   } catch {
@@ -283,6 +283,25 @@ if (-not $databaseReady) { throw "PostgreSQL запустился, но API не
 
 $stackStart = Invoke-DockerCommand @('compose', '--profile', 'media', '-p', $composeProjectName, '-f', $composePath, 'up', '-d', '--build')
 if ($stackStart.ExitCode -ne 0) { throw "Сборка или запуск завершились ошибкой. Диагностика: docker compose -p $composeProjectName -f compose.production.yaml logs." }
+
+# The results database has its own persistent volume. Keep its role password
+# synchronized as well when an existing installation is updated/reconfigured.
+$resultsContainer = "$composeProjectName-results-postgres-1"
+$resultsDatabaseReady = $false
+$resultsDatabaseError = ''
+for ($attempt = 0; $attempt -lt 30; $attempt++) {
+  try {
+    Set-DatabaseRolePassword -ContainerName $resultsContainer -DatabaseName 'schoolresults' -DesiredPassword $dbPassword
+    $resultsDatabaseReady = $true
+    break
+  } catch {
+    $resultsDatabaseError = [string]$_.Exception.Message
+    Start-Sleep -Seconds 2
+  }
+}
+if (-not $resultsDatabaseReady) {
+  throw "База результатов запустилась, но пароль не удалось синхронизировать. $resultsDatabaseError Данные в томе сохранены."
+}
 
 if (-not (Test-Path $setupComplete)) {
   Write-InstallStatus 'Ожидаю готовности платформы…'
@@ -338,8 +357,9 @@ if ($certificateExport.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $lanCerti
 }
 Import-Certificate -FilePath $lanCertificateFile -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
 try {
+  # Remove the legacy LAN-wide HTTP rule from older installations.
+  Remove-NetFirewallRule -DisplayName 'Zaily Urpaq School Platform' -ErrorAction SilentlyContinue
   $schoolFirewallRules = @(
-    @{ DisplayName = 'Zaily Urpaq School Platform'; Protocol = 'TCP'; LocalPort = 8080 },
     @{ DisplayName = 'Zaily Urpaq School HTTPS'; Protocol = 'TCP'; LocalPort = 8443 },
     @{ DisplayName = 'Zaily Urpaq LiveKit TCP'; Protocol = 'TCP'; LocalPort = 7881 },
     @{ DisplayName = 'Zaily Urpaq LiveKit UDP'; Protocol = 'UDP'; LocalPort = 7882 }

@@ -43,10 +43,13 @@ test('LiveKit service enforces teacher ownership and only authorizes active room
   });
   const roomToken = 'a'.repeat(48);
   const hash = require('node:crypto').createHash('sha256').update(roomToken).digest('hex');
+  let expired = false;
+  const roomClock = () => ({ startedAt: expired ? new Date(Date.now() - 60 * 60_000) : new Date(), durationMinutes: 30 });
   const prisma = {
-    testRoom: { findFirst: async ({ where }) => where.creatorId === 'teacher-1' ? { id: 'room-1', status: 'RUNNING' } : null },
+    $queryRaw: async () => [{ now: new Date() }],
+    testRoom: { findFirst: async ({ where }) => where.creatorId === 'teacher-1' ? { id: 'room-1', status: 'RUNNING', ...roomClock() } : null },
     user: { findUnique: async () => ({ firstName: 'Teacher', lastName: 'One' }) },
-    roomParticipant: { findFirst: async ({ where }) => where.sessionHash === hash ? { id: 'participant-1', firstName: 'Student', lastName: 'One', room: { id: 'room-1', status: 'RUNNING' } } : null },
+    roomParticipant: { findFirst: async ({ where }) => where.sessionHash === hash ? { id: 'participant-1', firstName: 'Student', lastName: 'One', room: { id: 'room-1', status: 'RUNNING', ...roomClock() } } : null },
     submission: { findFirst: async () => ({ status: 'IN_PROGRESS' }) },
   };
   const service = new LiveKitService(prisma);
@@ -58,4 +61,7 @@ test('LiveKit service enforces teacher ownership and only authorizes active room
   assert.equal(decode(student.token).payload.video.canPublish, true);
   assert.equal(decode(student.token).payload.video.canSubscribe, false);
   await assert.rejects(service.studentToken('room-1', 'x'.repeat(48)), error => error.getStatus?.() === 404);
+  expired = true;
+  await assert.rejects(service.staffToken('room-1', { sub: 'teacher-1', role: 'TEACHER' }), error => error.getStatus?.() === 400);
+  await assert.rejects(service.studentToken('room-1', roomToken), error => error.getStatus?.() === 400);
 });

@@ -42,7 +42,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
           const now = time[0]?.now ?? new Date();
           if (now.getTime() < room.startedAt.getTime() + room.durationMinutes * 60_000) return;
           const attempts = await tx.submission.findMany({ where: { roomId: id, status: SubmissionStatus.IN_PROGRESS }, select: { id: true } });
-          for (const attempt of attempts) await this.finalizeRoomAttempt(tx, id, attempt.id, room.snapshot as RoomSnapshot | null, now);
+          for (const attempt of attempts) await this.finalizeRoomAttempt(tx, id, attempt.id, room.snapshot as RoomSnapshot | null, now, 'TIME_LIMIT');
           if (!attempts.length) await tx.testRoom.update({ where: { id }, data: { status: RoomStatus.FINISHED, finishedAt: now } });
         });
       }
@@ -74,10 +74,25 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     if (!Number.isInteger(input.lobbyTarget) || input.lobbyTarget < 1 || input.lobbyTarget > 40) throw new BadRequestException('В лобби можно указать от 1 до 40 учеников');
     if (input.durationMinutes !== undefined && (!Number.isInteger(input.durationMinutes) || input.durationMinutes < 1 || input.durationMinutes > 600)) throw new BadRequestException('Длительность должна быть от 1 до 600 минут');
     const assignment = await this.prisma.assignment.findFirst({
-      where: { id: assignmentId, ...this.staffScope(actor) }, select: { id: true, creatorId: true, status: true, timeLimitMinutes: true },
+      where: { id: assignmentId, ...this.staffScope(actor) },
+      select: {
+        id: true, creatorId: true, status: true, timeLimitMinutes: true,
+        questions: { select: { id: true, type: true, options: { select: { isCorrect: true } } } },
+      },
     });
     if (!assignment) throw new NotFoundException('Задание не найдено');
     if (assignment.status !== AssignmentStatus.PUBLISHED) throw new BadRequestException('Сначала опубликуйте задание');
+    if (!assignment.questions.length) throw new BadRequestException('В задании нет вопросов');
+    const unsupported = assignment.questions.find(question => question.type !== 'SINGLE_CHOICE' && question.type !== 'MULTIPLE_CHOICE');
+    if (unsupported) throw new BadRequestException('Комната поддерживает только вопросы с одним или несколькими вариантами ответа. Уберите текстовые и числовые вопросы из задания.');
+    for (const question of assignment.questions) {
+      if (!question.options.length || !question.options.some(option => option.isCorrect)) {
+        throw new BadRequestException('У каждого вопроса комнаты должен быть хотя бы один правильный вариант');
+      }
+      if (question.type === 'SINGLE_CHOICE' && question.options.filter(option => option.isCorrect).length !== 1) {
+        throw new BadRequestException('В вопросе с одним ответом должен быть ровно один правильный вариант');
+      }
+    }
     for (let attempt = 0; attempt < 8; attempt++) {
       const joinCode = String(randomInt(0, 1_000_000)).padStart(6, '0');
       try {
@@ -225,15 +240,19 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async joinRoom(code: string, firstName: string, lastName: string, token?: string, sourceIp?: string) {
+  async joinRoom(code: string, firstName: string, lastName: string, token?: string, sourceIp?: string, deviceId = 'legacy-device') {
     if (!/^\d{6}$/u.test(code)) throw new NotFoundException('Комната не найдена');
     if (!firstName?.trim() || !lastName?.trim() || firstName.length > 100 || lastName.length > 100) throw new BadRequestException('Введите имя и фамилию');
     if (token && (token.length > 128 || !/^[A-Za-z0-9_-]{40,80}$/u.test(token))) throw new NotFoundException('Комната не найдена');
-    const ipKey = createHash('sha256').update(`room-v2:${String(sourceIp || 'unknown').slice(0, 128)}`).digest('hex');
+    const source = String(sourceIp || 'unknown').slice(0, 128);
+    const device = typeof deviceId === 'string' && /^[A-Za-z0-9_-]{32,80}$/u.test(deviceId) ? deviceId : 'legacy-device';
+    const deviceKey = createHash('sha256').update(`room-v2-device:${device}`).digest('hex');
+    const ipKey = createHash('sha256').update(`room-v2:${source}:${deviceKey}`).digest('hex');
+    const ipSignalKey = createHash('sha256').update(`room-v2-ip:${source}`).digest('hex');
     const blocked = await this.prisma.roomJoinAttempt.findUnique({ where: { ipKey }, select: { blockedUntil: true } });
-    if (blocked?.blockedUntil && blocked.blockedUntil > new Date()) throw new HttpException('Слишком много неверных кодов. Попробуйте через 15 минут.', HttpStatus.TOO_MANY_REQUESTS);
+    if (!token && blocked?.blockedUntil && blocked.blockedUntil > new Date()) throw new HttpException('Слишком много неверных кодов. Попробуйте через 15 минут.', HttpStatus.TOO_MANY_REQUESTS);
     const roomRecord = await this.prisma.testRoom.findUnique({ where: { joinCode: code }, select: { id: true } });
-    if (!roomRecord) return this.rejectInvalidRoomCode(ipKey);
+    if (!roomRecord) return this.rejectInvalidRoomCode(ipKey, ipSignalKey);
     const freshToken = token ? undefined : randomBytes(32).toString('base64url');
     const requestedHash = sessionDigest(token ?? freshToken!);
     return this.prisma.$transaction(async tx => {
@@ -249,7 +268,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
         await tx.roomParticipant.update({ where: { id: participant.id }, data: { lastSeenAt: serverNow } });
         const submission = await tx.submission.findFirst({ where: { roomId: room.id, participantId: participant.id }, orderBy: { attemptNo: 'desc' }, include: { answers: true } });
         if (!submission) throw new NotFoundException('Попытка не найдена');
-        if (blocked) await tx.roomJoinAttempt.deleteMany({ where: { ipKey } });
+        await tx.roomJoinAttempt.deleteMany({ where: { ipKey } });
         return { participantId: participant.id, attemptId: submission.id, roomId: room.id, status: room.status, resumed: true, studentRoom: this.studentView(room, submission) };
       }
 
@@ -276,17 +295,20 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
         }, include: { answers: true },
       });
       await tx.auditLog.create({ data: { action: 'ROOM_V2_JOINED', entityType: 'TestRoom', entityId: room.id, metadata: { participantId: participant.id }, ipAddress: ipKey } });
-      if (blocked) await tx.roomJoinAttempt.deleteMany({ where: { ipKey } });
+      await tx.roomJoinAttempt.deleteMany({ where: { ipKey } });
       return { participantId: participant.id, attemptId: submission.id, roomId: room.id, sessionToken: freshToken, status: room.status, resumed: false, studentRoom: this.studentView(room, submission, participantCount) };
     }, { maxWait: 20_000, timeout: 20_000 });
   }
 
-  private async rejectInvalidRoomCode(ipKey: string): Promise<never> {
+  private async rejectInvalidRoomCode(ipKey: string, ipSignalKey: string): Promise<never> {
     const now = new Date();
     const state = await this.prisma.$transaction(async tx => {
+      // Always acquire locks in the same order. The device+IP key can block one device,
+      // while the IP aggregate is only a signal for staff and never blocks the whole school.
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`room-v2-code:${ipKey}`}, 0))::text`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`room-v2-ip-signal:${ipSignalKey}`}, 0))::text`;
       const previous = await tx.roomJoinAttempt.findUnique({ where: { ipKey } });
-      if (previous?.blockedUntil && previous.blockedUntil > now) return { blocked: true };
+      if (previous?.blockedUntil && previous.blockedUntil > now) return { blocked: true, failures: previous.failures, ipFailures: 0 };
       const inWindow = previous && now.getTime() - previous.windowStartedAt.getTime() < 15 * 60_000;
       const failures = inWindow ? previous.failures + 1 : 1;
       const blockedUntil = failures >= 3 ? new Date(now.getTime() + 15 * 60_000) : null;
@@ -294,8 +316,19 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
         where: { ipKey }, create: { ipKey, failures, windowStartedAt: now, blockedUntil },
         update: { failures, windowStartedAt: inWindow ? previous.windowStartedAt : now, blockedUntil },
       });
-      await tx.auditLog.create({ data: { action: 'ROOM_CODE_REJECTED', entityType: 'TestRoom', metadata: { failures, blocked: !!blockedUntil }, ipAddress: ipKey } });
-      return { blocked: !!blockedUntil };
+      const ipPrevious = await tx.roomJoinAttempt.findUnique({ where: { ipKey: ipSignalKey } });
+      const ipInWindow = ipPrevious && now.getTime() - ipPrevious.windowStartedAt.getTime() < 15 * 60_000;
+      const ipFailures = ipInWindow ? ipPrevious.failures + 1 : 1;
+      await tx.roomJoinAttempt.upsert({
+        where: { ipKey: ipSignalKey },
+        create: { ipKey: ipSignalKey, failures: ipFailures, windowStartedAt: now, blockedUntil: null },
+        update: { failures: ipFailures, windowStartedAt: ipInWindow ? ipPrevious.windowStartedAt : now, blockedUntil: null },
+      });
+      if (ipFailures === 20) {
+        await tx.auditLog.create({ data: { action: 'ROOM_CODE_MASS_GUESSING_FLAGGED', entityType: 'TestRoom', metadata: { ipFailures, windowMinutes: 15 }, ipAddress: ipSignalKey } });
+      }
+      await tx.auditLog.create({ data: { action: 'ROOM_CODE_REJECTED', entityType: 'TestRoom', metadata: { failures, blocked: !!blockedUntil, ipFailures }, ipAddress: ipSignalKey } });
+      return { blocked: !!blockedUntil, failures, ipFailures };
     });
     if (state.blocked) throw new HttpException('Слишком много неверных кодов. Попробуйте через 15 минут.', HttpStatus.TOO_MANY_REQUESTS);
     throw new NotFoundException('Комната не найдена');
@@ -363,16 +396,24 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.$transaction(async tx => {
       const participant = await tx.roomParticipant.findFirst({ where: { roomId, sessionHash: tokenHash }, select: { id: true } });
       if (!participant) throw new NotFoundException('Комната не найдена');
+      // Keep room-level mutations in a consistent lock order: room first, then attempt.
+      await tx.$queryRaw`SELECT "id" FROM "TestRoom" WHERE "id" = ${roomId} FOR UPDATE`;
       const submission = await tx.submission.findFirst({ where: { roomId, participantId: participant.id }, orderBy: { attemptNo: 'desc' }, select: { id: true, status: true } });
       if (!submission || submission.status !== SubmissionStatus.IN_PROGRESS) throw new NotFoundException('Активная попытка не найдена');
       await tx.$queryRaw`SELECT "id" FROM "Submission" WHERE "id" = ${submission.id} FOR UPDATE`;
+      // The status read before the row lock can be stale if submit/finalization won the race.
+      const lockedSubmission = await tx.submission.findFirst({
+        where: { id: submission.id, roomId, participantId: participant.id, status: SubmissionStatus.IN_PROGRESS },
+        select: { id: true },
+      });
+      if (!lockedSubmission) throw new NotFoundException('Активная попытка не найдена');
       const room = await tx.testRoom.findUnique({ where: { id: roomId }, select: { status: true, startedAt: true, durationMinutes: true, snapshot: true } });
       if (!room || room.status !== RoomStatus.RUNNING) throw new BadRequestException('Тест уже завершён');
       const nowRows = await tx.$queryRaw<Array<{ now: Date }>>`SELECT NOW() AS now`;
       const now = nowRows[0]?.now ?? new Date();
       const expired = !!room.startedAt && room.durationMinutes !== null && now.getTime() >= room.startedAt.getTime() + room.durationMinutes * 60_000;
       if (expired) {
-        await this.finalizeRoomAttempt(tx, roomId, submission.id, room.snapshot as RoomSnapshot, now);
+        await this.finalizeRoomAttempt(tx, roomId, submission.id, room.snapshot as RoomSnapshot, now, 'TIME_LIMIT');
         return { saved: 0, finished: true, savedAt: now };
       }
       const snapshot = room.snapshot as RoomSnapshot | null;
@@ -429,24 +470,45 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.$transaction(async tx => {
       const participant = await tx.roomParticipant.findFirst({ where: { roomId, sessionHash: tokenHash }, select: { id: true } });
       if (!participant) throw new NotFoundException('Комната не найдена');
+      // Keep room-level mutations in a consistent lock order: room first, then attempt.
+      await tx.$queryRaw`SELECT "id" FROM "TestRoom" WHERE "id" = ${roomId} FOR UPDATE`;
       const attempt = await tx.submission.findFirst({ where: { roomId, participantId: participant.id }, orderBy: { attemptNo: 'desc' }, select: { id: true } });
       if (!attempt) throw new NotFoundException('Попытка не найдена');
       await tx.$queryRaw`SELECT "id" FROM "Submission" WHERE "id" = ${attempt.id} FOR UPDATE`;
       const current = await tx.submission.findFirst({ where: { id: attempt.id, roomId }, select: { id: true, status: true, proctorWarnings: true } });
       if (!current || current.status !== SubmissionStatus.IN_PROGRESS) return { warnings: current?.proctorWarnings ?? 0, finished: current?.status === SubmissionStatus.GRADED };
-      const room = await tx.testRoom.findUnique({ where: { id: roomId }, select: { status: true, snapshot: true } });
+      const room = await tx.testRoom.findUnique({ where: { id: roomId }, select: { status: true, snapshot: true, startedAt: true, durationMinutes: true } });
       if (!room || room.status !== RoomStatus.RUNNING) throw new BadRequestException('Тест уже завершён');
-      const latest = await tx.proctorEvent.findFirst({ where: { submissionId: current.id }, orderBy: { createdAt: 'desc' }, select: { eventType: true } });
-      if (dto.eventType === 'VISIBILITY_RESTORED') {
-        if (latest?.eventType === 'VISIBILITY_HIDDEN') await tx.proctorEvent.create({ data: { submissionId: current.id, eventType: dto.eventType } });
+      const clockRows = await tx.$queryRaw<Array<{ now: Date }>>`SELECT NOW() AS now`;
+      const authoritativeNow = clockRows[0]?.now ?? new Date();
+      const deadlinePassed = !!room.startedAt && room.durationMinutes !== null
+        && authoritativeNow.getTime() >= room.startedAt.getTime() + room.durationMinutes * 60_000;
+      if (deadlinePassed) {
+        const result = await this.finalizeRoomAttempt(tx, roomId, current.id, room.snapshot as RoomSnapshot | null, authoritativeNow, 'TIME_LIMIT');
+        return { warnings: current.proctorWarnings, finished: true, ...result };
+      }
+      const episode = dto.eventType.startsWith('VISIBILITY_') ? 'VISIBILITY' : 'SCREEN_SHARE';
+      const violationEvent = episode === 'VISIBILITY' ? 'VISIBILITY_HIDDEN' : 'SCREEN_SHARE_ENDED';
+      const restoreEvent = episode === 'VISIBILITY' ? 'VISIBILITY_RESTORED' : 'SCREEN_SHARE_RESTORED';
+      const latestInEpisode = await tx.proctorEvent.findFirst({
+        where: { submissionId: current.id, eventType: { in: episode === 'VISIBILITY' ? ['VISIBILITY_HIDDEN', 'VISIBILITY_RESTORED'] : ['SCREEN_SHARE_ENDED', 'SCREEN_SHARE_RESTORED'] } },
+        orderBy: { createdAt: 'desc' },
+        select: { eventType: true },
+      });
+      if (dto.eventType === restoreEvent) {
+        if (latestInEpisode?.eventType === violationEvent) {
+          await tx.proctorEvent.create({ data: { submissionId: current.id, eventType: dto.eventType } });
+        }
         return { warnings: current.proctorWarnings, finished: false };
       }
-      if (latest?.eventType === 'VISIBILITY_HIDDEN') return { warnings: current.proctorWarnings, finished: false, duplicate: true };
+      if (latestInEpisode?.eventType === violationEvent) {
+        return { warnings: current.proctorWarnings, finished: false, duplicate: true };
+      }
       const warnings = current.proctorWarnings + 1;
       await tx.proctorEvent.create({ data: { submissionId: current.id, eventType: dto.eventType } });
       await tx.submission.update({ where: { id: current.id }, data: { proctorWarnings: warnings } });
       let result: any = null;
-      if (warnings >= 3) result = await this.finalizeRoomAttempt(tx, roomId, current.id, room.snapshot as RoomSnapshot | null, new Date(), 'PROCTORING_VIOLATION_LIMIT');
+      if (warnings >= 3) result = await this.finalizeRoomAttempt(tx, roomId, current.id, room.snapshot as RoomSnapshot | null, authoritativeNow, 'PROCTORING_VIOLATION_LIMIT');
       await tx.auditLog.create({ data: { action: warnings >= 3 ? 'ROOM_PROCTOR_LIMIT_REACHED' : 'ROOM_PROCTOR_WARNING', entityType: 'Submission', entityId: current.id, metadata: { roomId, warnings, eventType: dto.eventType } } });
       return { warnings, finished: warnings >= 3, ...(result ?? {}) };
     }, { maxWait: 20_000, timeout: 20_000 });
@@ -457,16 +519,27 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     const result = await this.prisma.$transaction(async tx => {
       const participant = await tx.roomParticipant.findFirst({ where: { roomId, sessionHash: tokenHash }, select: { id: true } });
       if (!participant) throw new NotFoundException('Комната не найдена');
+      // Keep room-level mutations in a consistent lock order: room first, then attempt.
+      await tx.$queryRaw`SELECT "id" FROM "TestRoom" WHERE "id" = ${roomId} FOR UPDATE`;
       const submission = await tx.submission.findFirst({ where: { roomId, participantId: participant.id }, orderBy: { attemptNo: 'desc' }, select: { id: true, status: true } });
       if (!submission) throw new NotFoundException('Попытка не найдена');
       if (submission.status === SubmissionStatus.GRADED) return { submissionId: submission.id, alreadySubmitted: true };
       if (submission.status !== SubmissionStatus.IN_PROGRESS) throw new BadRequestException('Тест ещё не запущен');
       await tx.$queryRaw`SELECT "id" FROM "Submission" WHERE "id" = ${submission.id} FOR UPDATE`;
+      // A concurrent submit may have finalized this attempt while we waited for the row lock.
+      const lockedSubmission = await tx.submission.findFirst({
+        where: { id: submission.id, roomId, participantId: participant.id },
+        select: { id: true, status: true },
+      });
+      if (!lockedSubmission) throw new NotFoundException('Попытка не найдена');
+      if (lockedSubmission.status === SubmissionStatus.GRADED) return { submissionId: submission.id, alreadySubmitted: true };
+      if (lockedSubmission.status !== SubmissionStatus.IN_PROGRESS) throw new BadRequestException('Тест ещё не запущен');
       const room = await tx.testRoom.findUnique({ where: { id: roomId }, select: { status: true, startedAt: true, durationMinutes: true, snapshot: true } });
       if (!room || room.status !== RoomStatus.RUNNING) throw new BadRequestException('Тест уже завершён');
       const nowRows = await tx.$queryRaw<Array<{ now: Date }>>`SELECT NOW() AS now`;
       const now = nowRows[0]?.now ?? new Date();
-      const result = await this.finalizeRoomAttempt(tx, roomId, submission.id, room.snapshot as RoomSnapshot, now);
+      const expired = !!room.startedAt && room.durationMinutes !== null && now.getTime() >= room.startedAt.getTime() + room.durationMinutes * 60_000;
+      const result = await this.finalizeRoomAttempt(tx, roomId, submission.id, room.snapshot as RoomSnapshot, now, expired ? 'TIME_LIMIT' : 'STUDENT_SUBMITTED');
       return { submissionId: submission.id, alreadySubmitted: false, ...result };
     }, { maxWait: 20_000, timeout: 20_000 });
     const rows = await this.prisma.submission.findMany({ where: { roomId, status: SubmissionStatus.GRADED, totalScore: { not: null } }, orderBy: [{ totalScore: 'desc' }, { submittedAt: 'asc' }], select: { id: true, studentFirstName: true, studentLastName: true, totalScore: true, submittedAt: true } });

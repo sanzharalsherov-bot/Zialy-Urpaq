@@ -12,9 +12,9 @@ const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 
 type User = { id: string; email: string; firstName?: string; lastName?: string; role: string };
 type OptionDraft = { text: string; isCorrect: boolean };
-type QuestionDraft = { type: 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'SHORT_TEXT'; prompt: string; points: number; options: OptionDraft[] };
+type QuestionDraft = { type: 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'SHORT_TEXT' | 'LONG_TEXT' | 'NUMERIC'; prompt: string; points: number; options: OptionDraft[]; correctValue: number; tolerance: number };
 const newQuestion = (): QuestionDraft => ({
-  type: 'SINGLE_CHOICE', prompt: '', points: 1,
+  type: 'SINGLE_CHOICE', prompt: '', points: 1, correctValue: 0, tolerance: 0,
   options: [{ text: '', isCorrect: true }, { text: '', isCorrect: false }],
 });
 
@@ -119,7 +119,7 @@ export default function Home() {
   const [studentCode, setStudentCode] = useState('');
   const [studentFirstName, setStudentFirstName] = useState('');
   const [studentLastName, setStudentLastName] = useState('');
-  const [view, setView] = useState<'overview' | 'assignments' | 'create' | 'results' | 'student' | 'users'>('overview');
+  const [view, setView] = useState<'overview' | 'assignments' | 'create' | 'results' | 'student' | 'users' | 'school'>('overview');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [dashboard, setDashboard] = useState({ activeAssignments: 0, submissionsAwaitingReview: 0, gradedSubmissions: 0, totalSubmissions: 0 });
@@ -131,6 +131,7 @@ export default function Home() {
   const [roomTargetDraft, setRoomTargetDraft] = useState('30');
   const [roomDurationDraft, setRoomDurationDraft] = useState('');
   const [available, setAvailable] = useState<any[]>([]);
+  const [studentHistory, setStudentHistory] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedResults, setSelectedResults] = useState<any | null>(null);
   const [monitorOpen, setMonitorOpen] = useState(false);
@@ -144,6 +145,8 @@ export default function Home() {
   const [subjectName, setSubjectName] = useState('');
   const [description, setDescription] = useState('');
   const [timeLimit, setTimeLimit] = useState('');
+  const [availableFrom, setAvailableFrom] = useState('');
+  const [dueAt, setDueAt] = useState('');
   const [maxAttempts, setMaxAttempts] = useState('1');
   const [lobbyTarget, setLobbyTarget] = useState('');
   const [shuffleQuestions, setShuffleQuestions] = useState(true);
@@ -156,7 +159,18 @@ export default function Home() {
   const [accountPassword, setAccountPassword] = useState('');
   const [studentAccessCodeInput, setStudentAccessCodeInput] = useState('');
   const [studentAccessCodeConfigured, setStudentAccessCodeConfigured] = useState(false);
+  const [schoolClasses, setSchoolClasses] = useState<any[]>([]);
+  const [schoolStudents, setSchoolStudents] = useState<any[]>([]);
+  const [classNameDraft, setClassNameDraft] = useState('');
+  const [academicYearDraft, setAcademicYearDraft] = useState(String(new Date().getFullYear()) + '-' + String(new Date().getFullYear() + 1));
+  const [newStudentFirstName, setNewStudentFirstName] = useState('');
+  const [newStudentLastName, setNewStudentLastName] = useState('');
+  const [newStudentNo, setNewStudentNo] = useState('');
+  const [newStudentClassId, setNewStudentClassId] = useState('');
+  const [assignmentClassId, setAssignmentClassId] = useState('');
   const [manualGrades, setManualGrades] = useState<Record<string, string>>({});
+  const [manualComments, setManualComments] = useState<Record<string, string>>({});
+  const [submissionFeedback, setSubmissionFeedback] = useState<Record<string, string>>({});
   const [restoringSession, setRestoringSession] = useState(true);
   const [clock, setClock] = useState(Date.now());
   const [onlineRetry, setOnlineRetry] = useState(0);
@@ -173,7 +187,7 @@ export default function Home() {
     if (!languageLoaded) return;
     writeStorage(window.localStorage, 'school-crm-language', language);
     document.documentElement.lang = language;
-    document.title = language === 'kk' ? 'Zaily Urpaq мектебі | Оқу платформасы' : language === 'en' ? 'Zaily Urpaq School | Learning Platform' : 'Zaily Urpaq мектебі | Учебная платформа';
+    document.title = language === 'kk' ? 'Zialy Urpaq мектебі | Оқу платформасы' : language === 'en' ? 'Zialy Urpaq School | Learning Platform' : 'Zialy Urpaq мектебі | Учебная платформа';
   }, [language, languageLoaded]);
 
   const isStaff = user?.role === 'ADMIN' || user?.role === 'TEACHER';
@@ -183,12 +197,12 @@ export default function Home() {
     writeStorage(window.sessionStorage, ATTEMPT_KEY, null);
     writeStorage(window.localStorage, TOKEN_KEY, null);
     setToken(''); setUser(null); setSubmission(null); setSelectedAssignment(null); setSelectedResults(null); setStudentResult(null);
-    setAssignments([]); setAvailable([]); setAccounts([]); setAnswers({}); setManualGrades({});
+    setAssignments([]); setAvailable([]); setStudentHistory([]); setAccounts([]); setAnswers({}); setManualGrades({}); setManualComments({}); setSubmissionFeedback({});
     setPassword(''); setStudentCode(''); setStudentFirstName(''); setStudentLastName(''); setEmail('');
     setAccountPassword(''); setAccountEmail(''); setAccountFirstName(''); setAccountLastName('');
-    setStudentAccessCodeInput(''); setStudentAccessCodeConfigured(false);
+    setStudentAccessCodeInput(''); setStudentAccessCodeConfigured(false); setSchoolClasses([]); setSchoolStudents([]); setClassNameDraft(''); setNewStudentFirstName(''); setNewStudentLastName(''); setNewStudentNo(''); setNewStudentClassId(''); setAssignmentClassId('');
     setTitle(''); setSubjectName(''); setDescription(''); setQuestions([newQuestion()]);
-    setTimeLimit(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setRoomCode('');
+    setTimeLimit(''); setAvailableFrom(''); setDueAt(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setRoomCode('');
     setDashboard({ activeAssignments: 0, submissionsAwaitingReview: 0, gradedSubmissions: 0, totalSubmissions: 0 });
   };
   const request = async (path: string, options: RequestInit = {}) => {
@@ -252,17 +266,17 @@ export default function Home() {
     const load = async () => {
       try {
         if (user.role === 'STUDENT') {
-          const list = await request('/student/assignments');
-          if (!cancelled) setAvailable(list);
+          const [list, history] = await Promise.all([request('/student/assignments'), request('/student/results')]);
+          if (!cancelled) { setAvailable(list); setStudentHistory(history); }
         } else {
-          const [stats, list, userList] = await Promise.all([
-            request('/dashboard'), request('/assignments'), user.role === 'ADMIN' ? request('/auth/users') : Promise.resolve(null),
+          const [stats, list, userList, classes] = await Promise.all([
+            request('/dashboard'), request('/assignments'), user.role === 'ADMIN' ? request('/auth/users') : Promise.resolve(null), request('/school/classes'),
           ]);
-          if (!cancelled) { setDashboard(stats); setAssignments(list); if (userList) setAccounts(userList); }
+          if (!cancelled) { setDashboard(stats); setAssignments(list); setSchoolClasses(classes); if (userList) setAccounts(userList); if (!newStudentClassId && classes.length) setNewStudentClassId(classes[0].id); }
           if (!cancelled) await loadTestRooms(list);
           if (user.role === 'ADMIN') {
-            const codeStatus = await request('/auth/student-access-code');
-            if (!cancelled) setStudentAccessCodeConfigured(codeStatus.configured);
+            const [codeStatus, students] = await Promise.all([request('/auth/student-access-code'), request('/school/students')]);
+            if (!cancelled) { setStudentAccessCodeConfigured(codeStatus.configured); setSchoolStudents(students); }
           }
         }
       } catch (error) {
@@ -367,16 +381,21 @@ export default function Home() {
     let createdId: string | null = null;
     try {
       if (!subjectName.trim() || !title.trim() || questions.some(q => !q.prompt.trim())) throw new Error('Введите предмет, название и текст каждого вопроса');
-      if (questions.some(q => q.type !== 'SHORT_TEXT' && !validPoints(Number(q.points), 0.01))) throw new Error('Укажите баллы от 0.01 до 10000, не более двух знаков после запятой');
+      if (questions.some(q => !['SHORT_TEXT', 'LONG_TEXT'].includes(q.type) && !validPoints(Number(q.points), 0.01))) throw new Error('Укажите баллы от 0.01 до 10000, не более двух знаков после запятой');
+      if (questions.some(q => q.type === 'NUMERIC' && (!Number.isFinite(q.correctValue) || Math.abs(q.correctValue) > 9999999999.9999 || Math.abs(q.correctValue * 10000 - Math.round(q.correctValue * 10000)) > 1e-7 || !Number.isFinite(q.tolerance) || q.tolerance < 0))) throw new Error('Проверьте правильный числовой ответ и допустимую погрешность');
+      if (availableFrom && dueAt && new Date(dueAt).getTime() <= new Date(availableFrom).getTime()) throw new Error('Срок сдачи должен быть позже даты открытия задания');
       const payload = {
-        title: title.trim(), subjectName: subjectName.trim(), description: description.trim() || undefined,
+        title: title.trim(), subjectName: subjectName.trim(), description: description.trim() || undefined, classId: assignmentClassId || undefined,
         timeLimitMinutes: timeLimit ? Number(timeLimit) : undefined,
+        availableFrom: availableFrom ? new Date(availableFrom).toISOString() : undefined,
+        dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
         maxAttempts: Number(maxAttempts),
         lobbyTarget: lobbyTarget ? Number(lobbyTarget) : undefined,
         shuffleQuestions,
         shuffleOptions,
         questions: questions.map(q => ({
-          type: q.type, prompt: q.prompt.trim(), ...(q.type !== 'SHORT_TEXT' ? { points: Number(q.points) } : {}),
+          type: q.type, prompt: q.prompt.trim(), ...(!['SHORT_TEXT', 'LONG_TEXT'].includes(q.type) ? { points: Number(q.points) } : {}),
+          ...(q.type === 'NUMERIC' ? { config: { correctValue: Number(q.correctValue), tolerance: Number(q.tolerance) } } : {}),
           ...(q.type === 'SINGLE_CHOICE' || q.type === 'MULTIPLE_CHOICE'
             ? { options: q.options.map(o => ({ text: o.text.trim(), isCorrect: o.isCorrect })) }
             : {}),
@@ -384,7 +403,7 @@ export default function Home() {
       };
       const created = await request('/assignments', { method: 'POST', body: JSON.stringify(payload) });
       createdId = created.id;
-      setTitle(''); setSubjectName(''); setDescription(''); setTimeLimit(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setQuestions([newQuestion()]);
+      setTitle(''); setSubjectName(''); setDescription(''); setAssignmentClassId(''); setTimeLimit(''); setAvailableFrom(''); setDueAt(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setQuestions([newQuestion()]);
       setAssignments(old => [created, ...old]); setView('assignments');
       await request(`/assignments/${created.id}/publish`, { method: 'PATCH' });
       createdId = null;
@@ -494,6 +513,30 @@ export default function Home() {
     finally { setBusy(false); }
   };
 
+  const createSchoolClass = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true); setMessage('');
+    try {
+      await request('/school/classes', { method: 'POST', body: JSON.stringify({ name: classNameDraft, academicYear: academicYearDraft }) });
+      setClassNameDraft('');
+      const classes = await request('/school/classes');
+      setSchoolClasses(classes);
+      if (classes.length && !newStudentClassId) setNewStudentClassId(classes[0].id);
+      setMessage('Класс создан');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось создать класс'); }
+    finally { setBusy(false); }
+  };
+
+  const createSchoolStudent = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true); setMessage('');
+    try {
+      const result = await request('/school/students', { method: 'POST', body: JSON.stringify({ firstName: newStudentFirstName, lastName: newStudentLastName, classId: newStudentClassId, ...(newStudentNo.trim() ? { studentNo: newStudentNo.trim() } : {}) }) });
+      setNewStudentFirstName(''); setNewStudentLastName(''); setNewStudentNo('');
+      setSchoolStudents(await request('/school/students'));
+      setMessage('Ученик ' + result.lastName + ' ' + result.firstName + ' добавлен в список. Для входа ему нужен общий код школы.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось добавить ученика'); }
+    finally { setBusy(false); }
+  };
+
   const saveStudentAccessCode = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true); setMessage('');
@@ -521,9 +564,19 @@ export default function Home() {
     setBusy(true); setMessage('');
     try {
       const result = await request(`/assignments/${assignment.id}/results`);
-      setSelectedResults(result); setManualGrades({}); setMonitorOpen(false); setView('results');
+      setSelectedResults(result); setManualGrades({}); setManualComments({}); setSubmissionFeedback({}); setMonitorOpen(false); setView('results');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось загрузить результаты'); }
     finally { setBusy(false); }
+  };
+
+  const openStudentResult = async (submissionId: string) => {
+    setBusy(true); setMessage('');
+    try {
+      const result = await request(`/student/submissions/${submissionId}/result`);
+      setStudentResult(result);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось загрузить результат');
+    } finally { setBusy(false); }
   };
 
   const startTest = async (event: FormEvent) => {
@@ -565,7 +618,10 @@ export default function Home() {
       lastAutosavedAnswers.current = {};
       writeStorage(window.sessionStorage, ATTEMPT_KEY, null);
       // A failed list refresh must not make a successful submission look failed.
-      try { const list = await request('/student/assignments'); setAvailable(list); } catch { /* Keep the submission confirmation. */ }
+      try {
+        const [list, history] = await Promise.all([request('/student/assignments'), request('/student/results')]);
+        setAvailable(list); setStudentHistory(history);
+      } catch { /* Keep the submission confirmation. */ }
     } catch (error) {
       // The server may have finalized the deadline while this tab was offline.
       try {
@@ -588,14 +644,16 @@ export default function Home() {
       if (!validPoints(awardedPoints)) {
         setMessage('Укажите баллы от 0 до 10000, не более двух знаков после запятой'); return;
       }
-      values.push({ answerId: answer.id, awardedPoints, teacherComment: answer.teacherComment || undefined });
+      values.push({ answerId: answer.id, awardedPoints, teacherComment: manualComments[answer.id] ?? answer.teacherComment ?? undefined });
     }
     setBusy(true); setMessage('');
     try {
-      await request(`/submissions/${item.id}/grade`, { method: 'PATCH', body: JSON.stringify({ answers: values }) });
+      await request(`/submissions/${item.id}/grade`, { method: 'PATCH', body: JSON.stringify({ answers: values, feedback: submissionFeedback[item.id] !== undefined ? submissionFeedback[item.id].trim() : (item.feedback ?? undefined) }) });
       const updated = await request(`/assignments/${selectedResults.assignment.id}/results`);
       setSelectedResults(updated);
       setManualGrades(old => Object.fromEntries(Object.entries(old).filter(([id]) => !answerRows.some((answer: any) => answer.id === id))));
+      setManualComments(old => Object.fromEntries(Object.entries(old).filter(([id]) => !answerRows.some((answer: any) => answer.id === id))));
+      setSubmissionFeedback(old => { const next = { ...old }; delete next[item.id]; return next; });
       setMessage('Оценка сохранена');
       await refreshStaff();
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось сохранить оценку'); }
@@ -765,7 +823,13 @@ export default function Home() {
   useEffect(() => {
     if (!token || user?.role !== 'STUDENT' || !studentResult?.submissionId || studentResult.score !== null) return;
     const poll = async () => {
-      try { setStudentResult(await request(`/student/submissions/${studentResult.submissionId}/result`)); } catch { /* Keep the submitted result while the teacher is reviewing. */ }
+      try {
+        const result = await request(`/student/submissions/${studentResult.submissionId}/result`);
+        setStudentResult(result);
+        if (result.score !== null) {
+          try { setStudentHistory(await request('/student/results')); } catch { /* The visible result remains available. */ }
+        }
+      } catch { /* Keep the submitted result while the teacher is reviewing. */ }
     };
     const interval = window.setInterval(poll, 5000);
     return () => window.clearInterval(interval);
@@ -780,15 +844,15 @@ export default function Home() {
   if (!user) {
     return (
       <main className="loginShell">
-        <section className="loginShowcase" aria-label="Zaily Urpaq мектебі">
-          <div className="showcaseBrand"><span className="showcaseMark">ZU</span><span>Zaily Urpaq <small>МЕКТЕБІ</small></span></div>
+        <section className="loginShowcase" aria-label="Zialy Urpaq мектебі">
+          <div className="showcaseBrand"><span className="showcaseMark">ZU</span><span>Zialy Urpaq <small>МЕКТЕБІ</small></span></div>
           <div className="showcaseCopy"><span className="eyebrow">{t('УЧЕБНАЯ ПЛАТФОРМА')}</span><h2>{t('Всё для обучения.')}<br/><em>{t('В одном месте.')}</em></h2><p>{t('Создавайте задания, проверяйте работы и отслеживайте учебный прогресс.')}</p></div>
           <div className="showcaseTiles" aria-hidden="true"><span>01 <b>{t("Задания")}</b></span><span>02 <b>{t("Результаты")}</b></span><span>03 <b>{t("Прогресс")}</b></span></div>
           <div className="showcaseOrb" aria-hidden="true" />
         </section>
         <section className="loginCard">
           {languagePicker}
-          <div className="brand loginBrand"><img className="brandLogo" src="/brand/zaily-urpaq-logo.jpg" alt="Zaily Urpaq мектебі" /></div>
+          <div className="brand loginBrand"><img className="brandLogo" src="/brand/zaily-urpaq-logo.jpg" alt="Zialy Urpaq мектебі" /></div>
           <span className="eyebrow">{t('УЧЕБНАЯ ПЛАТФОРМА')}</span>
           <h1>{t('Войти в систему')}</h1>
           <div className="loginSwitch" role="group" aria-label={t("Тип входа")}>
@@ -817,20 +881,20 @@ export default function Home() {
   return (
     <main className="shell">
       <aside className="sidebar">
-        <div className="brand"><img className="brandLogo" src="/brand/zaily-urpaq-logo.jpg" alt="Zaily Urpaq мектебі" /></div>
+        <div className="brand"><img className="brandLogo" src="/brand/zaily-urpaq-logo.jpg" alt="Zialy Urpaq мектебі" /></div>
         <div className="sideLabel">{t('ПЛАТФОРМА')}</div>
         {isStaff ? <>
           <button className={`navItem ${view === 'overview' ? 'active' : ''}`} onClick={() => setView('overview')}>▦ <span>{t('Обзор')}</span></button>
           <button className={`navItem ${view === 'assignments' || view === 'create' ? 'active' : ''}`} onClick={() => setView('assignments')}>▤ <span>{t('Тесты и задания')}</span></button>
           <button className={`navItem ${view === 'results' ? 'active' : ''}`} onClick={() => setView('results')}>▥ <span>{t('Результаты')}</span></button>
-          {user.role === 'ADMIN' && <button className={`navItem ${view === 'users' ? 'active' : ''}`} onClick={() => setView('users')}>♙ <span>{t("Аккаунты")}</span></button>}
+          {user.role === 'ADMIN' && <><button className={`navItem ${view === 'users' ? 'active' : ''}`} onClick={() => setView('users')}>♙ <span>{t("Аккаунты")}</span></button><button className={`navItem ${view === 'school' ? 'active' : ''}`} onClick={() => setView('school')}>⌂ <span>{t('Классы и ученики')}</span></button></>}
         </> : <button className={`navItem active`} onClick={() => { if (submission) exitTest(); else setView('student'); }}>▤ <span>{t('Мои задания')}</span></button>}
         <div className="sidebarBottom"><div className="avatar">ZU</div><div><b>{user.firstName || t(isStaff ? 'Преподаватель' : 'Ученик')}</b><small>{t(isStaff ? 'Управление школой' : 'Личный аккаунт ученика')}</small></div></div>
         <button className="logoutButton" disabled={busy} aria-label={t('Выйти из системы ↗')} onClick={logout}>{t('Выйти из системы ↗')}</button>
       </aside>
       <section className="content" id="overview">
         <header className="topbar">
-          <div><span className="eyebrow">{t(isStaff ? 'УЧЕБНАЯ ПЛАТФОРМА' : 'ЛИЧНЫЙ КАБИНЕТ УЧЕНИКА')} </span><h1>{t(view === 'create' ? 'Создать задание' : view === 'assignments' ? 'Тесты и задания' : view === 'results' ? 'Результаты' : view === 'student' ? 'Мои задания' : view === 'users' ? 'Аккаунты' : 'Обзор')}</h1></div>
+          <div><span className="eyebrow">{t(isStaff ? 'УЧЕБНАЯ ПЛАТФОРМА' : 'ЛИЧНЫЙ КАБИНЕТ УЧЕНИКА')} </span><h1>{t(view === 'create' ? 'Создать задание' : view === 'assignments' ? 'Тесты и задания' : view === 'results' ? 'Результаты' : view === 'student' ? 'Мои задания' : view === 'users' ? 'Аккаунты' : view === 'school' ? 'Классы и ученики' : 'Обзор')}</h1></div>
           <div className="topbarTools">{languagePicker}<span className="devBadge"><i /> {t(user.role === 'ADMIN' ? 'Администратор' : isStaff ? 'Преподаватель' : 'Ученик')}</span></div>
         </header>
         {message && <div className="notice globalNotice" role="status"><span>{t(message)}</span><button onClick={() => setMessage('')} aria-label={t("Закрыть уведомление")}>×</button></div>}
@@ -892,6 +956,33 @@ export default function Home() {
             {accounts.length >= 200 && <p className="helperText">{t("Здесь показаны последние 200 аккаунтов.")}</p>}
           </section>
         </div>}
+        {user.role === 'ADMIN' && view === 'school' && <div className="accountWorkspace">
+          <section className="panel accountFormPanel">
+            <div className="panelHead"><div><h3>Создать класс</h3><p>Добавьте класс, чтобы назначать задания группам учеников.</p></div></div>
+            <form className="formStack" onSubmit={createSchoolClass}>
+              <label>Название класса<input value={classNameDraft} onChange={e => setClassNameDraft(e.target.value)} required maxLength={80} placeholder="Например, 7А" /></label>
+              <label>Учебный год<input value={academicYearDraft} onChange={e => setAcademicYearDraft(e.target.value)} required maxLength={20} placeholder="2026-2027" /></label>
+              <button className="primaryButton" disabled={busy}>Создать класс</button>
+            </form>
+          </section>
+          <section className="panel accessCodePanel">
+            <div className="panelHead"><div><h3>Добавить ученика</h3><p>Ученик будет связан с выбранным классом и сможет войти по общему коду школы.</p></div></div>
+            <form className="formStack" onSubmit={createSchoolStudent}>
+              <div className="formGrid"><label>Имя<input value={newStudentFirstName} onChange={e => setNewStudentFirstName(e.target.value)} required maxLength={100} /></label><label>Фамилия<input value={newStudentLastName} onChange={e => setNewStudentLastName(e.target.value)} required maxLength={100} /></label></div>
+              <label>Класс<select value={newStudentClassId} onChange={e => setNewStudentClassId(e.target.value)} required><option value="">Выберите класс</option>{schoolClasses.map((item: any) => <option value={item.id} key={item.id}>{item.name} · {item.academicYear}</option>)}</select></label>
+              <label>Табельный номер <small>Необязательно</small><input value={newStudentNo} onChange={e => setNewStudentNo(e.target.value)} maxLength={40} /></label>
+              <button className="primaryButton" disabled={busy || !schoolClasses.length}>Добавить ученика</button>
+            </form>
+          </section>
+          <section className="panel accountListPanel">
+            <div className="panelHead"><div><h3>Классы</h3><p>Классы и количество учеников</p></div><span className="builderCount">{schoolClasses.length}</span></div>
+            {schoolClasses.length ? <div className="accountList">{schoolClasses.map((item: any) => <article className="accountRow" key={item.id}><div className="accountAvatar teacher">К</div><div className="accountIdentity"><b>{item.name}</b><span>{item.academicYear}</span></div><span className="accountState active">{item._count?.students ?? 0} учеников</span></article>)}</div> : <p className="emptyState">Классов пока нет. Создайте первый класс.</p>}
+          </section>
+          <section className="panel accountListPanel">
+            <div className="panelHead"><div><h3>Ученики</h3><p>Список учеников, связанных с классами</p></div><span className="builderCount">{schoolStudents.length}</span></div>
+            {schoolStudents.length ? <div className="accountList">{schoolStudents.map((item: any) => <article className="accountRow" key={item.id}><div className="accountAvatar">{item.user.firstName?.[0]}{item.user.lastName?.[0]}</div><div className="accountIdentity"><b>{item.user.lastName} {item.user.firstName}</b><span>{item.studentNo || 'Без табельного номера'}</span></div><span className="accountRole teacher">{item.schoolClass?.name || 'Без класса'}</span><span className="accountState active">{item.user.isActive ? 'Активен' : 'Отключён'}</span></article>)}</div> : <p className="emptyState">Учеников пока нет. Добавьте ученика в список.</p>}
+          </section>
+        </div>}
         {isStaff && view === 'create' && <section className="panel workPanel">
           <div className="panelHead"><div><h3>{t('Конструктор задания')}</h3><p>{t("Сначала предмет и название, затем вопросы и настройки прохождения.")}</p></div><span className="builderCount">{questions.length} {questionCountLabel}</span></div>
           <form className="formStack" onSubmit={createAssignment}>
@@ -902,6 +993,7 @@ export default function Home() {
             </div>
             <div className="builderBasics">
               <label className="builderSubject">{t('Предмет')}<input value={subjectName} onChange={e => setSubjectName(e.target.value)} required maxLength={120} placeholder={t("Например, Математика")} /></label>
+              <label>{t('Класс')}<select value={assignmentClassId} onChange={e => setAssignmentClassId(e.target.value)}><option value="">{t('Все классы')}</option>{schoolClasses.map((item: any) => <option value={item.id} key={item.id}>{item.name} · {item.academicYear}</option>)}</select><small>Выбранный класс увидит это задание. Если не выбирать класс, задание будет доступно всем ученикам без привязки к классу.</small></label>
               <label className="builderTitle">{t('Название задания')}<input value={title} onChange={e => setTitle(e.target.value)} required maxLength={200} placeholder={t("Например, Дроби: контрольная работа")} /></label>
             </div>
             <div className="builderSectionHeading"><span>{t("Вопросы")}</span><small>{t("Сформулируйте вопрос, выберите тип ответа и укажите баллы.")}</small></div>
@@ -915,18 +1007,19 @@ export default function Home() {
                   ...(type === 'SINGLE_CHOICE' ? { options: q.options.map((o, i) => ({ ...o, isCorrect: i === Math.max(0, q.options.findIndex(x => x.isCorrect)) })) } : {}),
                 });
               }}>
-                <option value="SINGLE_CHOICE">{t("Один правильный вариант")}</option><option value="MULTIPLE_CHOICE">{t("Несколько правильных вариантов")}</option><option value="SHORT_TEXT">{t("Текст — проверяет преподаватель")}</option>
-              </select></label>{q.type !== 'SHORT_TEXT' && <label>{t("Максимум баллов")}<input type="number" min="0.01" max="10000" step="0.01" value={q.points} onChange={e => updateQuestion(qi, { points: Number(e.target.value) })} required /></label>}</div>
+                <option value="SINGLE_CHOICE">{t("Один правильный вариант")}</option><option value="MULTIPLE_CHOICE">{t("Несколько правильных вариантов")}</option><option value="NUMERIC">{t("Числовой ответ с автопроверкой")}</option><option value="SHORT_TEXT">{t("Короткий текст — проверяет преподаватель")}</option><option value="LONG_TEXT">{t("Развёрнутый ответ — проверяет преподаватель")}</option>
+              </select></label>{!['SHORT_TEXT', 'LONG_TEXT'].includes(q.type) && <label>{t("Максимум баллов")}<input type="number" min="0.01" max="10000" step="0.01" value={q.points} onChange={e => updateQuestion(qi, { points: Number(e.target.value) })} required /></label>}</div>
+              {q.type === 'NUMERIC' && <div className="formGrid"><label>{t('Правильный числовой ответ')}<input type="number" step="any" value={q.correctValue} onChange={e => updateQuestion(qi, { correctValue: Number(e.target.value) })} required /></label><label>{t('Допустимая погрешность')}<input type="number" min="0" step="any" value={q.tolerance} onChange={e => updateQuestion(qi, { tolerance: Number(e.target.value) })} required /></label></div>}
               {(q.type === 'SINGLE_CHOICE' || q.type === 'MULTIPLE_CHOICE') && <div className="optionsEditor"><div className="optionsTitle">{t("Варианты ответов")} <small>{t("Отметьте правильный вариант")}</small></div>
                 {q.options.map((o, oi) => <div className="optionDraft" key={oi}><input type={q.type === 'SINGLE_CHOICE' ? 'radio' : 'checkbox'} name={`correct-${qi}`} checked={o.isCorrect} onChange={e => updateOption(qi, oi, { isCorrect: e.target.checked })} aria-label={language === 'kk' ? `${oi + 1}-нұсқа — дұрыс жауап` : language === 'en' ? `Option ${oi + 1} — correct answer` : `Вариант ${oi + 1} — правильный ответ`} /><input maxLength={500} value={o.text} onChange={e => updateOption(qi, oi, { text: e.target.value })} placeholder={language === 'kk' ? `${oi + 1}-нұсқа` : language === 'en' ? `Option ${oi + 1}` : `Вариант ${oi + 1}`} required /><button type="button" className="removeOptionButton" onClick={() => removeOption(qi, oi)} disabled={q.options.length <= 2} title={q.options.length <= 2 ? t('Нужно оставить минимум два варианта') : t('Удалить вариант')} aria-label={language === 'kk' ? `${oi + 1}-нұсқаны жою` : language === 'en' ? `Remove option ${oi + 1}` : `Удалить вариант ${oi + 1}`}>×</button></div>)}
                 <button type="button" className="textButton" disabled={q.options.length >= 100} onClick={() => updateQuestion(qi, { options: [...q.options, { text: '', isCorrect: false }] })}>{t("+ Добавить вариант")}</button>
               </div>}
-              {q.type === 'SHORT_TEXT' && <p className="helperText">{t('Баллы за текстовый ответ преподаватель выставляет при проверке.')}</p>}
+              {['SHORT_TEXT', 'LONG_TEXT'].includes(q.type) && <p className="helperText">{t('Баллы за текстовый ответ преподаватель выставляет при проверке.')}</p>}
             </div>)}
             <button type="button" className="secondaryButton addQuestion" disabled={questions.length >= 200} onClick={() => setQuestions(old => [...old, newQuestion()])}>{t("+ Добавить вопрос")}</button>
             <div className="builderSectionHeading"><span>{t("Дополнительные настройки")}</span><small>{t("Ограничения применяются ко всему тесту.")}</small></div>
               <label>{t('Описание')}<textarea maxLength={5000} value={description} onChange={e => setDescription(e.target.value)} rows={2} placeholder={t('Необязательное описание для учеников')} /></label>
-            <div className="formGrid builderSettings"><label>{t("Лимит времени, минут")}<input type="number" min="1" max="600" value={timeLimit} onChange={e => setTimeLimit(e.target.value)} placeholder={t("Без лимита")} /></label><label>{t("Попытки на весь тест для одного ФИО")}<input type="number" min="1" max="100" value={maxAttempts} onChange={e => setMaxAttempts(e.target.value)} required /><small>{t("Считается каждое запущенное прохождение теста целиком.")}</small></label><label>{t('Размер лобби, учеников')}<input type="number" min="1" max="2000" value={lobbyTarget} onChange={e => setLobbyTarget(e.target.value)} placeholder={t('Без лобби')} /><small>{t('Пусто — тест запускается сразу после входа ученика.')}</small></label></div>
+            <div className="formGrid builderSettings"><label>{t("Открыть задание с") }<input type="datetime-local" value={availableFrom} onChange={e => setAvailableFrom(e.target.value)} /></label><label>{t("Срок сдачи") }<input type="datetime-local" value={dueAt} min={availableFrom || undefined} onChange={e => setDueAt(e.target.value)} /></label><label>{t("Лимит времени, минут")}<input type="number" min="1" max="600" value={timeLimit} onChange={e => setTimeLimit(e.target.value)} placeholder={t("Без лимита")} /></label><label>{t("Попытки на весь тест для одного ФИО")}<input type="number" min="1" max="100" value={maxAttempts} onChange={e => setMaxAttempts(e.target.value)} required /><small>{t("Считается каждое запущенное прохождение теста целиком.")}</small></label><label>{t('Размер лобби, учеников')}<input type="number" min="1" max="2000" value={lobbyTarget} onChange={e => setLobbyTarget(e.target.value)} placeholder={t('Без лобби')} /><small>{t('Пусто — тест запускается сразу после входа ученика.')}</small></label></div>
             <div className="builderToggles"><label><input type="checkbox" checked={shuffleQuestions} onChange={e => setShuffleQuestions(e.target.checked)} />{t('Перемешивать вопросы для каждого ученика')}</label><label><input type="checkbox" checked={shuffleOptions} onChange={e => setShuffleOptions(e.target.checked)} />{t('Перемешивать варианты ответов')}</label></div>
             <div className="formActions"><button type="button" className="secondaryButton" onClick={() => setView('assignments')}>{t('Отмена')}</button><button className="primaryButton" disabled={busy}>{busy ? t('Сохраняем…') : t('Сохранить и опубликовать')}</button></div>
           </form>
@@ -963,10 +1056,11 @@ export default function Home() {
                     <label>{t('Баллы')}<input type="number" min="0" max={10000} step="0.01" disabled={busy} value={manualGrades[a.id] ?? (a.awardedPoints === null ? '' : String(a.awardedPoints))} onChange={e => setManualGrades(old => ({ ...old, [a.id]: e.target.value }))} aria-label={`${t('Баллы')} ${t('Вопрос')} ${a.question.position}, ${t('максимум')} 10000`} placeholder={t('Введите баллы')} /></label>
                     <button type="button" className="secondaryButton gradeFullButton" disabled={busy} onClick={() => setManualGrades(old => ({ ...old, [a.id]: '1' }))}>{t('Засчитать · 1 балл')}</button>
                     <button type="button" className="secondaryButton gradeZeroButton" disabled={busy} onClick={() => setManualGrades(old => ({ ...old, [a.id]: '0' }))}>{t("Не засчитывать · 0")}</button>
+                    <label className="teacherCommentField">Комментарий к ответу<textarea maxLength={5000} disabled={busy} value={manualComments[a.id] ?? a.teacherComment ?? ''} onChange={e => setManualComments(old => ({ ...old, [a.id]: e.target.value }))} placeholder="Комментарий для ученика" /></label>
                   </div>
                 </div>}
               </div>)}</div>
-              {(s.status === 'EXPIRED' || s.answers.some((a: any) => isManualQuestion(a.question.type))) && <div className="manualReviewFooter"><div><b>{t("Проверка работы")}</b><p>{t(s.answers.some((a: any) => isManualQuestion(a.question.type)) ? 'Введите баллы за каждый текстовый ответ, затем сохраните оценку.' : 'Работа отправлена после окончания времени. Проверьте ответы и подтвердите оценку.')}</p></div><button className="primaryButton" disabled={busy} onClick={() => gradeSubmission(s)}>{busy ? t('Сохраняем…') : s.status === 'GRADED' ? t('Сохранить изменения') : t('Сохранить оценку')}</button></div>}
+              {(s.status === 'EXPIRED' || s.answers.some((a: any) => isManualQuestion(a.question.type))) && <div className="manualReviewFooter"><div><b>{t("Проверка работы")}</b><p>{t(s.answers.some((a: any) => isManualQuestion(a.question.type)) ? 'Введите баллы за каждый текстовый ответ, затем сохраните оценку.' : 'Работа отправлена после окончания времени. Проверьте ответы и подтвердите оценку.')}</p><label className="teacherCommentField">Общий комментарий к работе<textarea maxLength={10000} disabled={busy} value={submissionFeedback[s.id] ?? s.feedback ?? ''} onChange={e => setSubmissionFeedback(old => ({ ...old, [s.id]: e.target.value }))} placeholder="Обратная связь для ученика" /></label></div><button className="primaryButton" disabled={busy} onClick={() => gradeSubmission(s)}>{busy ? t('Сохраняем…') : s.status === 'GRADED' ? t('Сохранить изменения') : t('Сохранить оценку')}</button></div>}
               <div className="resultFoot"><span className={`status ${s.status === 'GRADED' ? '' : 'pending'}`}>{t(({ IN_PROGRESS: 'В процессе', SUBMITTED: 'Отправлено', UNDER_REVIEW: 'На проверке', GRADED: 'Проверено', EXPIRED: 'Время истекло', RETURNED: 'Возвращено' } as Record<string, string>)[s.status] || s.status)}</span>{s.feedback && <span className="muted">{s.feedback}</span>}</div>
             </article>)}
             {!selectedResults.submissions.length && <p className="emptyState">{t("Попыток пока нет.")}</p>}
@@ -978,12 +1072,41 @@ export default function Home() {
           <form className="roomJoinForm" onSubmit={startTest}><label>{t('Код теста')}<input autoComplete="one-time-code" value={roomCode} onChange={event => setRoomCode(event.target.value.toUpperCase())} required minLength={6} maxLength={16} /></label><button className="primaryButton" disabled={busy}>{busy ? t('Подключаемся…') : t('Подключиться к тесту')}</button></form>
           {available.map(a => <div className="studentAssignment" key={a.id}><div className="assignmentIcon">▤</div><div className="assignmentMain"><b>{a.title}</b><p>{a.subject.name} · {a._count.questions} {t("вопросов ·")} {a.timeLimitMinutes ? `${a.timeLimitMinutes} ${t('мин.')}` : t('Без лимита времени')} {t("· До")} {a.dueAt ? new Date(a.dueAt).toLocaleString(dateLocale) : t('без срока')}</p>{a.description && <small>{a.description}</small>}</div></div>)}
           {!available.length && <p className="emptyState">{t("Сейчас нет опубликованных доступных заданий.")}</p>}
+          <div className="panelHead studentHistoryHead"><div><h3>{t('История результатов')}</h3><p>{t('Ранее отправленные работы и оценки')}</p></div></div>
+          {studentHistory.map((item: any) => <article className="studentAssignment" key={item.submissionId}>
+            <div className="assignmentIcon">✓</div>
+            <div className="assignmentMain"><b>{item.assignmentTitle}</b><p>{item.subjectName} · {t('Попытка №')}{item.attemptNo} · {item.submittedAt ? new Date(item.submittedAt).toLocaleString(dateLocale) : t('Отправлено')}</p>
+              <small>{item.score === null ? t('Ожидает проверки') : `${item.score} ${t('баллов')}`}{item.feedback ? ` · ${item.feedback}` : ''}</small>
+            </div>
+            <button className="secondaryButton" disabled={busy} onClick={() => openStudentResult(item.submissionId)}>{t('Посмотреть')}</button>
+          </article>)}
+          {!studentHistory.length && <p className="emptyState">{t('Здесь появятся отправленные работы и отзывы преподавателя.')}</p>}
         </section>}
         {!isStaff && studentResult && <section className="panel workPanel studentResultPanel">
           <div className="panelHead"><div><h3>{t('Результат теста')}</h3><p>{studentResult.assignmentTitle}</p></div><button className="secondaryButton" onClick={() => setStudentResult(null)}>{t('К заданиям')}</button></div>
           {studentResult.finishReason === 'PROCTORING_VIOLATION_LIMIT' && <p className="proctorNotice" role="status">{t('Попытка завершена: три предупреждения о переключении вкладки. Сохранённые ответы проверены.')}</p>}
           {studentResult.score === null && <p className="helperText">{t('Текстовые ответы проверяет преподаватель. Результат обновится автоматически после проверки.')}</p>}
           <div className="studentResultKpis"><article><span>{t('Баллы')}</span><strong>{studentResult.score ?? '—'}</strong></article><article><span>{t('Место в рейтинге')}</span><strong>{studentResult.rank ? `#${studentResult.rank}` : '—'}</strong></article><article><span>{t('Правильных ответов')}</span><strong>{studentResult.correctCount ?? '—'}</strong></article><article><span>{t('Время прохождения')}</span><strong>{Math.floor((studentResult.durationMs || 0) / 60000)}:{String(Math.floor(((studentResult.durationMs || 0) % 60000) / 1000)).padStart(2, '0')}</strong></article></div>
+          {studentResult.feedback && <div className="manualReviewFooter"><div><b>{t('Комментарий преподавателя')}</b><p>{studentResult.feedback}</p></div></div>}
+          {studentResult.answers?.length > 0 && <section className="studentAnswerReview" aria-label={t('Проверка ответов')}>
+            <h4>{t('Ответы и комментарии')}</h4>
+            {studentResult.answers.map((answer: any, index: number) => {
+              const value = answer.numericValue !== null && answer.numericValue !== undefined
+                ? String(answer.numericValue)
+                : Array.isArray(answer.jsonValue)
+                  ? answer.jsonValue.map((id: string) => answer.question.options.find((option: any) => option.id === id)?.text ?? id).join(', ')
+                  : typeof answer.jsonValue === 'string'
+                    ? answer.question.options.find((option: any) => option.id === answer.jsonValue)?.text ?? answer.jsonValue
+                    : answer.textValue || '—';
+              return <article className="studentAnswerReviewRow" key={answer.question.id}>
+                <b>{index + 1}. {answer.question.prompt}</b>
+                <p>{t('Ваш ответ')}: {value}</p>
+                <p>{t('Баллы')}: {answer.awardedPoints ?? '—'}{answer.question.points > 0 ? ` / ${answer.question.points}` : ''}</p>
+                {!['SHORT_TEXT', 'LONG_TEXT'].includes(answer.question.type) && answer.isCorrect !== null && <span className={`status ${answer.isCorrect ? '' : 'pending'}`}>{answer.isCorrect ? t('Зачтено') : t('Не зачтено')}</span>}
+                {answer.teacherComment && <p className="muted">{t('Комментарий к ответу')}: {answer.teacherComment}</p>}
+              </article>;
+            })}
+          </section>}
           <h4>{t('Топ учеников')}</h4>{studentResult.top?.length ? studentResult.top.map((item: any) => <div className="leaderboardRow" key={item.rank}><b>#{item.rank}</b><span>{item.lastName} {item.firstName}</span><span>{item.score} {t('баллов')}</span><span>{item.correctCount} {t('правильных')}</span></div>) : <p className="emptyState">{t('Таблица лидеров появится после оценивания результатов.')}</p>}
         </section>}
         {!isStaff && submission?.status === 'IN_PROGRESS' && <StudentMonitor key={submission.id} token={token} submissionId={submission.id} language={language} />}
@@ -1002,7 +1125,7 @@ export default function Home() {
           </div></div>)}
           <div className="formActions"><button className="secondaryButton" disabled={busy} onClick={exitTest}>{t("Выйти из теста")}</button><button className="primaryButton" disabled={busy} onClick={submitTest}>{busy ? t('Отправляем…') : t('Отправить ответы')}</button></div>
         </section>}
-        <footer><strong>Zaily Urpaq мектебі</strong><span>·</span> {t("Учебная платформа")} <span>·</span> {t("Реальные данные из PostgreSQL")}</footer>
+        <footer><strong>Zialy Urpaq мектебі</strong><span>·</span> {t("Учебная платформа")} <span>·</span> {t("Реальные данные из PostgreSQL")}</footer>
       </section>
     </main>
   );

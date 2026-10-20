@@ -175,14 +175,26 @@ export class AuthService {
       throw new UnauthorizedException('Неверный общий код школы');
     }
     release();
+    const rosterMatches = await this.prisma.user.findMany({
+      where: { role: UserRole.STUDENT, isActive: true, firstName, lastName, studentProfile: { isNot: null } },
+      select: { id: true, studentProfile: { select: { id: true } } },
+      take: 2,
+    });
+    if (rosterMatches.length === 0 || !rosterMatches[0].studentProfile) {
+      throw new UnauthorizedException('Ученик не найден в школьном списке. Обратитесь к администратору.');
+    }
+    if (rosterMatches.length > 1) {
+      throw new UnauthorizedException('Найдено несколько учеников с таким ФИО. Обратитесь к администратору для уточнения данных.');
+    }
+    const studentProfileId = rosterMatches[0].studentProfile.id;
     const sub = sharedStudentSubject(firstName, lastName);
     const accessToken = await this.jwt.signAsync({
-      sub, role: UserRole.STUDENT, kind: 'shared_student', firstName, lastName,
+      sub, role: UserRole.STUDENT, kind: 'shared_student', firstName, lastName, studentProfileId,
       accessCodeVersion: studentCodeVersion(settings.studentAccessCodeHash),
     });
     return {
       accessToken, tokenType: 'Bearer', expiresIn: 7200,
-      user: { id: sub, email: '', firstName, lastName, role: UserRole.STUDENT },
+      user: { id: sub, studentProfileId, email: '', firstName, lastName, role: UserRole.STUDENT },
     };
   }
 

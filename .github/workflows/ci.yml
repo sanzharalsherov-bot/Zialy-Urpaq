@@ -1,0 +1,154 @@
+name: Verify and package Zaily Urpaq
+
+on:
+  push:
+    branches:
+      - dev
+      - "fix/**"
+  pull_request:
+    branches:
+      - dev
+  workflow_dispatch:
+    inputs:
+      build_installer:
+        description: "Build a Windows installer (use only for a release candidate)"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Push and pull_request events can both validate the same commit. Keep only the
+# newest run for a branch to avoid wasting CI minutes on superseded revisions.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Tests and production build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: schoolcrm
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: schoolcrm_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U schoolcrm -d schoolcrm_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolcrm_test
+      TEST_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolcrm_test
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate deployment and QA script syntax
+        env:
+          POSTGRES_PASSWORD: ci-only-compose-check
+          JWT_SECRET: ci-only-jwt-secret-not-for-production
+          WEB_ORIGIN: https://127.0.0.1:8443
+          SCHOOL_LAN_IP: 127.0.0.1
+          LIVEKIT_API_KEY: devkey
+          LIVEKIT_API_SECRET: ci-only-livekit-secret
+          LIVEKIT_PUBLIC_URL: wss://127.0.0.1
+          LIVEKIT_NODE_IP: 127.0.0.1
+        run: |
+          docker compose -f compose.production.yaml config --quiet
+          node --check apps/api/test/qa-room-load.mjs
+          node --check apps/api/test/qa-lan-acceptance.mjs
+          node --check apps/api/test/qa-lan-signaling.mjs
+          node --check apps/api/test/qa-backup-recovery.mjs
+          node --check apps/api/test/qa-release-smoke.mjs
+          node --check apps/api/test/qa-postgres-recovery-ci.mjs
+      - name: Generate Prisma Client
+        run: npx prisma generate --schema prisma/schema.prisma
+      - name: Apply database migrations
+        run: npx prisma migrate deploy --schema prisma/schema.prisma
+      - name: Prepare isolated results database for integration and recovery tests
+        env:
+          TEST_RESULTS_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolresults_test
+        run: |
+          docker run --rm --network host \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -e TEST_DATABASE_URL -e TEST_RESULTS_DATABASE_URL \
+            postgres:17-alpine sh -ec '
+              if ! psql "$TEST_DATABASE_URL" -lqt | grep -qw schoolresults_test; then
+                psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE schoolresults_test"
+              fi
+              if ! psql "$TEST_DATABASE_URL" -lqt | grep -qw schoolcrm_outbox_test; then
+                psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE schoolcrm_outbox_test"
+              fi
+              psql "$TEST_RESULTS_DATABASE_URL" -v ON_ERROR_STOP=1 -f /workspace/prisma/results-database/init/001-results.sql
+            '
+      - name: Verify isolated dual-database backup and restore
+        env:
+          TEST_RESULTS_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolresults_test
+        run: node apps/api/test/qa-postgres-recovery-ci.mjs
+      - name: Apply migrations to isolated outbox integration database
+        env:
+          DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolcrm_outbox_test
+        run: npx prisma migrate deploy --schema prisma/schema.prisma
+      - name: Run tests
+        run: npm test
+      - name: Run isolated PostgreSQL results-outbox integration test
+        env:
+          DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolcrm_outbox_test
+          TEST_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolcrm_outbox_test
+          TEST_RESULTS_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolresults_test
+        run: node --test apps/api/test/results-outbox-postgres.test.cjs
+      - name: Build production applications
+        run: npm run build
+      - name: Build production Docker images
+        run: |
+          docker build --file apps/api/Dockerfile --tag zailyurpaq-api:ci .
+          docker build --file apps/web/Dockerfile --tag zailyurpaq-web:ci .
+
+  windows-installer:
+    name: Build Windows installer
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.build_installer == true)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate PowerShell deployment scripts
+        shell: powershell
+        run: |
+          $files = @(
+            'packaging/windows/Build-Installer.ps1',
+            'packaging/windows/install.ps1',
+            'packaging/windows/Backup.ps1'
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "${file}: $($_.Message) at line $($_.Extent.StartLineNumber)" }
+              exit 1
+            }
+          }
+      - name: Build graphical installer
+        shell: powershell
+        run: .\\packaging\\windows\\Build-Installer.ps1
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZailyUrpaqSetup-windows-x64
+          path: packaging/windows/dist/ZailyUrpaqSetup*.exe
+          if-no-files-found: error
+          retention-days: 14

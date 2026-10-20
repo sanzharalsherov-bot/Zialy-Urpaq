@@ -25,7 +25,7 @@ export class JwtAuthGuard implements CanActivate {
     const token = header.slice(7);
     let payload: {
       sub: string; exp: number; email?: string; role?: UserRole; kind?: string;
-      firstName?: string; lastName?: string; accessCodeVersion?: string;
+      firstName?: string; lastName?: string; studentProfileId?: string; accessCodeVersion?: string;
     };
 
     try {
@@ -41,6 +41,7 @@ export class JwtAuthGuard implements CanActivate {
         payload.role !== UserRole.STUDENT || typeof payload.firstName !== 'string' || typeof payload.lastName !== 'string' ||
         normalizeName(payload.firstName) !== payload.firstName || normalizeName(payload.lastName) !== payload.lastName ||
         payload.sub !== sharedStudentSubject(payload.firstName, payload.lastName) ||
+        typeof payload.studentProfileId !== 'string' || !payload.studentProfileId || payload.studentProfileId.length > 128 ||
         typeof payload.accessCodeVersion !== 'string' || !/^[a-f0-9]{64}$/.test(payload.accessCodeVersion)
       )) throw new Error('Invalid shared student token');
     } catch {
@@ -68,9 +69,22 @@ export class JwtAuthGuard implements CanActivate {
       if (!settings || payload.accessCodeVersion !== studentCodeVersion(settings.studentAccessCodeHash)) {
         throw new UnauthorizedException('Код школы изменён. Войдите заново.');
       }
+      let profile;
+      try {
+        profile = await this.prisma.studentProfile.findUnique({
+          where: { id: payload.studentProfileId },
+          select: { id: true, user: { select: { isActive: true, role: true, firstName: true, lastName: true } } },
+        });
+      } catch {
+        throw new ServiceUnavailableException('Не удалось проверить профиль ученика. Повторите позже.');
+      }
+      if (!profile || !profile.user.isActive || profile.user.role !== UserRole.STUDENT ||
+          profile.user.firstName !== payload.firstName || profile.user.lastName !== payload.lastName) {
+        throw new UnauthorizedException('Профиль ученика недоступен. Войдите заново.');
+      }
       request.user = {
         sub: payload.sub, email: '', role: UserRole.STUDENT, kind: 'shared_student',
-        firstName: payload.firstName, lastName: payload.lastName,
+        firstName: payload.firstName, lastName: payload.lastName, studentProfileId: profile.id,
       };
       return true;
     }

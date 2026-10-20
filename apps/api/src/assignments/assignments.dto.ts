@@ -1,6 +1,6 @@
 import {
   ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional,
-  IsString, IsObject, IsIn, Matches, Max, MaxLength, Min, MinLength, ValidateNested,
+  IsString, IsObject, IsIn, IsDateString, Matches, Max, MaxLength, Min, MinLength, ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { QuestionType } from '@prisma/client';
@@ -45,6 +45,12 @@ export class CreateAssignmentDto {
 
   @IsOptional() @IsInt() @Min(1) @Max(600)
   timeLimitMinutes?: number;
+
+  @IsOptional() @IsDateString()
+  availableFrom?: string;
+
+  @IsOptional() @IsDateString()
+  dueAt?: string;
 
   @IsOptional() @IsInt() @Min(1) @Max(100)
   maxAttempts?: number;
