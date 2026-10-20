@@ -67,7 +67,7 @@ test('Windows installer avoids interactive certificate prompts and continues if 
   assert.match(installer, /X509Certificates\.X509Store/u);
   assert.match(installer, /StoreLocation\]::CurrentUser/u);
   assert.match(installer, /CERTIFICATE_TRUST_PENDING/u);
-  assert.match(installer, /сервер и база уже запущены, установка продолжится/u);
+  assert.match(installer, /сервер и база уже запущены, установка продолжится/iu);
   assert.doesNotMatch(installer, /Import-Certificate -FilePath \$lanCertificateFile/u);
 });
 
