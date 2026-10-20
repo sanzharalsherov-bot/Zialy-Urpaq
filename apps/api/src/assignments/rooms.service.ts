@@ -454,16 +454,21 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       if (!current || current.status !== SubmissionStatus.IN_PROGRESS) return { warnings: current?.proctorWarnings ?? 0, finished: current?.status === SubmissionStatus.GRADED };
       const room = await tx.testRoom.findUnique({ where: { id: roomId }, select: { status: true, snapshot: true } });
       if (!room || room.status !== RoomStatus.RUNNING) throw new BadRequestException('Тест уже завершён');
-      const latest = await tx.proctorEvent.findFirst({ where: { submissionId: current.id }, orderBy: { createdAt: 'desc' }, select: { eventType: true } });
-      const episodeEvents = ['VISIBILITY_HIDDEN', 'SCREEN_SHARE_ENDED'];
-      const restoreEvents = ['VISIBILITY_RESTORED', 'SCREEN_SHARE_RESTORED'];
-      if (restoreEvents.includes(dto.eventType)) {
-        if (latest?.eventType && episodeEvents.includes(latest.eventType)) {
+      const episode = dto.eventType.startsWith('VISIBILITY_') ? 'VISIBILITY' : 'SCREEN_SHARE';
+      const violationEvent = episode === 'VISIBILITY' ? 'VISIBILITY_HIDDEN' : 'SCREEN_SHARE_ENDED';
+      const restoreEvent = episode === 'VISIBILITY' ? 'VISIBILITY_RESTORED' : 'SCREEN_SHARE_RESTORED';
+      const latestInEpisode = await tx.proctorEvent.findFirst({
+        where: { submissionId: current.id, eventType: { in: episode === 'VISIBILITY' ? ['VISIBILITY_HIDDEN', 'VISIBILITY_RESTORED'] : ['SCREEN_SHARE_ENDED', 'SCREEN_SHARE_RESTORED'] } },
+        orderBy: { createdAt: 'desc' },
+        select: { eventType: true },
+      });
+      if (dto.eventType === restoreEvent) {
+        if (latestInEpisode?.eventType === violationEvent) {
           await tx.proctorEvent.create({ data: { submissionId: current.id, eventType: dto.eventType } });
         }
         return { warnings: current.proctorWarnings, finished: false };
       }
-      if (latest?.eventType && episodeEvents.includes(latest.eventType)) {
+      if (latestInEpisode?.eventType === violationEvent) {
         return { warnings: current.proctorWarnings, finished: false, duplicate: true };
       }
       const warnings = current.proctorWarnings + 1;
