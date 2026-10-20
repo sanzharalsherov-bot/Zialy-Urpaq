@@ -498,7 +498,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       await tx.proctorEvent.create({ data: { submissionId: current.id, eventType: dto.eventType } });
       await tx.submission.update({ where: { id: current.id }, data: { proctorWarnings: warnings } });
       let result: any = null;
-      if (warnings >= 3) result = await this.finalizeRoomAttempt(tx, roomId, current.id, room.snapshot as RoomSnapshot | null, new Date(), 'PROCTORING_VIOLATION_LIMIT');
+      if (warnings >= 3) result = await this.finalizeRoomAttempt(tx, roomId, current.id, room.snapshot as RoomSnapshot | null, authoritativeNow, 'PROCTORING_VIOLATION_LIMIT');
       await tx.auditLog.create({ data: { action: warnings >= 3 ? 'ROOM_PROCTOR_LIMIT_REACHED' : 'ROOM_PROCTOR_WARNING', entityType: 'Submission', entityId: current.id, metadata: { roomId, warnings, eventType: dto.eventType } } });
       return { warnings, finished: warnings >= 3, ...(result ?? {}) };
     }, { maxWait: 20_000, timeout: 20_000 });
