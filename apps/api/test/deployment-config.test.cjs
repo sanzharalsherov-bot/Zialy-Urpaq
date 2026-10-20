@@ -134,12 +134,16 @@ test('plain HTTP is bound to localhost and never opened to the school LAN', () =
 
 
 test('production configuration refuses missing, short, or placeholder JWT secrets', () => {
-  const base = { NODE_ENV: 'production', WEB_ORIGIN: 'http://localhost' };
+  const base = { NODE_ENV: 'production', WEB_ORIGIN: 'https://192.168.1.20:8443' };
   for (const JWT_SECRET of ['', 'short', 'replace-with-random-secret-at-least-32-bytes', 'your-secret-' + 'x'.repeat(40)]) {
     assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET }), /JWT_SECRET must be a unique random secret/u);
   }
-  assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET: 'a'.repeat(32), WEB_ORIGIN: '' }), /WEB_ORIGIN must be configured/u);
+  assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET: 'a'.repeat(32), WEB_ORIGIN: '' }), /WEB_ORIGIN must be a valid HTTPS origin/u);
+  for (const WEB_ORIGIN of ['http://192.168.1.20:8443', '*', 'https://example.com/path', 'https://user:pass@example.com', 'https://example.com?x=1']) {
+    assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET: 'a'.repeat(48), WEB_ORIGIN }), /WEB_ORIGIN must be a single HTTPS origin/u, WEB_ORIGIN);
+  }
   assert.doesNotThrow(() => validateProductionConfiguration({ ...base, JWT_SECRET: 'r'.repeat(48) }));
+  assert.doesNotThrow(() => validateProductionConfiguration({ ...base, WEB_ORIGIN: 'https://school.example', JWT_SECRET: 'r'.repeat(48) }));
   assert.doesNotThrow(() => validateProductionConfiguration({ NODE_ENV: 'test' }));
 });
 
@@ -151,4 +155,13 @@ test('production API and web containers run as the unprivileged Node user', () =
   assert.match(webDockerfile, /COPY --chown=node:node --from=build[\s\S]*?USER node[\s\S]*?EXPOSE 3000/u);
   assert.doesNotMatch(apiDockerfile, /USER root/u);
   assert.doesNotMatch(webDockerfile, /USER root/u);
+});
+
+
+test('production CORS origin is explicitly configured as the school HTTPS origin', () => {
+  const mediaConfig = readFileSync(resolve(__dirname, '../../../packaging/windows/Ensure-MediaConfig.ps1'), 'utf8');
+  const envExample = readFileSync(resolve(__dirname, '../../../.env.example'), 'utf8');
+  assert.match(compose, /WEB_ORIGIN:\s*\$\{WEB_ORIGIN:\?Set WEB_ORIGIN to the school's HTTPS origin\}/u);
+  assert.match(mediaConfig, /Add-MissingSetting 'WEB_ORIGIN' "https:\/\/\$\{LanIp\}:\$\{httpsPort\}"/u);
+  assert.match(envExample, /WEB_ORIGIN="https:\/\/192\.168\.1\.10:8443"/u);
 });
