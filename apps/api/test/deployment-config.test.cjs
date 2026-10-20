@@ -148,6 +148,29 @@ test('production configuration refuses missing, short, or placeholder JWT secret
 });
 
 
+test('production configuration rejects weak, repetitive, and reused JWT secrets', () => {
+  const base = {
+    NODE_ENV: 'production',
+    WEB_ORIGIN: 'https://192.168.1.20:8443',
+  };
+  for (const JWT_SECRET of [
+    'a'.repeat(48),
+    'abcd'.repeat(12),
+    'a'.repeat(32) + 'b',
+  ]) {
+    assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET }), /JWT_SECRET must be a unique random secret/u);
+  }
+  const independentSecret = 'k9!Qv2#Lm7@Rs4$Xp8^Ta1&Zc6*Bn3?Hd5';
+  for (const env of [
+    { POSTGRES_PASSWORD: independentSecret },
+    { BOOTSTRAP_ADMIN_KEY: independentSecret },
+    { LIVEKIT_API_SECRET: independentSecret },
+  ]) {
+    assert.throws(() => validateProductionConfiguration({ ...base, ...env, JWT_SECRET: independentSecret }), /JWT_SECRET must be a unique random secret/u);
+  }
+  assert.doesNotThrow(() => validateProductionConfiguration({ ...base, JWT_SECRET: independentSecret, POSTGRES_PASSWORD: 'separate-db-secret', BOOTSTRAP_ADMIN_KEY: 'separate-bootstrap-secret' }));
+});
+
 test('production API and web containers run as the unprivileged Node user', () => {
   const apiDockerfile = readFileSync(resolve(__dirname, '../../../apps/api/Dockerfile'), 'utf8');
   const webDockerfile = readFileSync(resolve(__dirname, '../../../apps/web/Dockerfile'), 'utf8');
