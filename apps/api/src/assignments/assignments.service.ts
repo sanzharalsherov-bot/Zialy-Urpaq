@@ -122,9 +122,17 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
 
   private async studentScope(user: AuthenticatedUser): Promise<Prisma.AssignmentWhereInput> {
     const profile = user.studentProfileId
-      ? await this.prisma.studentProfile.findUnique({ where: { id: user.studentProfileId }, select: { classId: true } })
+      ? await this.prisma.studentProfile.findUnique({ where: { id: user.studentProfileId }, select: { id: true, classId: true } })
       : null;
-    return profile?.classId ? { OR: [{ classId: null }, { classId: profile.classId }] } : { classId: null };
+    const unassignedToIndividuals = { recipients: { none: {} } };
+    if (!profile?.classId) return { classId: null, ...unassignedToIndividuals };
+    return {
+      OR: [
+        { classId: null, ...unassignedToIndividuals },
+        { classId: profile.classId, ...unassignedToIndividuals },
+        { classId: profile.classId, recipients: { some: { studentId: profile.id } } },
+      ],
+    };
   }
 
   async listForStaff(user: AuthenticatedUser) {
@@ -227,6 +235,16 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       if (dto.classId && !(await tx.schoolClass.findUnique({ where: { id: dto.classId }, select: { id: true } }))) {
         throw new BadRequestException('Класс не найден');
       }
+      if (dto.studentIds?.length) {
+        if (!dto.classId) throw new BadRequestException('Для назначения отдельным ученикам сначала выберите класс');
+        const recipients = await tx.studentProfile.findMany({
+          where: { id: { in: dto.studentIds }, classId: dto.classId, user: { isActive: true } },
+          select: { id: true },
+        });
+        if (recipients.length !== dto.studentIds.length) {
+          throw new BadRequestException('Список учеников изменился. Обновите список и выберите учеников только из выбранного класса');
+        }
+      }
       const subject = await tx.subject.upsert({ where: { name: subjectName }, update: {}, create: { name: subjectName } });
       return tx.assignment.create({
         data: {
@@ -245,6 +263,9 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
           shuffleOptions: dto.shuffleOptions ?? true,
           totalPoints,
           questions: { create: questions },
+          recipients: dto.studentIds?.length ? {
+            create: dto.studentIds.map(studentId => ({ studentId })),
+          } : undefined,
         },
         include: { subject: true, questions: { orderBy: { position: 'asc' }, include: { options: true } } },
       });
