@@ -74,6 +74,7 @@ jobs:
           node --check apps/api/test/qa-lan-signaling.mjs
           node --check apps/api/test/qa-backup-recovery.mjs
           node --check apps/api/test/qa-release-smoke.mjs
+          node --check apps/api/test/qa-postgres-recovery-ci.mjs
       - name: Generate Prisma Client
         run: npx prisma generate --schema prisma/schema.prisma
       - name: Apply database migrations
