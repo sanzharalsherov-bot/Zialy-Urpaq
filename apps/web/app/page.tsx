@@ -1102,7 +1102,7 @@ export default function Home() {
                 <b>{index + 1}. {answer.question.prompt}</b>
                 <p>{t('Ваш ответ')}: {value}</p>
                 <p>{t('Баллы')}: {answer.awardedPoints ?? '—'}{answer.question.points > 0 ? ` / ${answer.question.points}` : ''}</p>
-                {answer.isCorrect !== null && <span className={`status ${answer.isCorrect ? '' : 'pending'}`}>{answer.isCorrect ? t('Зачтено') : t('Не зачтено')}</span>}
+                {!['SHORT_TEXT', 'LONG_TEXT'].includes(answer.question.type) && answer.isCorrect !== null && <span className={`status ${answer.isCorrect ? '' : 'pending'}`}>{answer.isCorrect ? t('Зачтено') : t('Не зачтено')}</span>}
                 {answer.teacherComment && <p className="muted">{t('Комментарий к ответу')}: {answer.teacherComment}</p>}
               </article>;
             })}
