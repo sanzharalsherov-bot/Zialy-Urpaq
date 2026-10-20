@@ -7,6 +7,21 @@ import { clearRoomSession, readRoomSession, requestJson, storeRoomSession, write
 const StudentScreenShare = dynamic(() => import('./room-screen-sharing').then(module => module.StudentScreenShare), { ssr: false });
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '/api';
+const ROOM_DEVICE_KEY = 'zaily-urpaq-room-device-id';
+let fallbackRoomDeviceId = '';
+
+function getRoomDeviceId() {
+  try {
+    const saved = window.localStorage.getItem(ROOM_DEVICE_KEY);
+    if (saved && /^[A-Za-z0-9_-]{32,80}$/u.test(saved)) return saved;
+  } catch { /* Use a tab-scoped fallback if browser storage is unavailable. */ }
+  if (fallbackRoomDeviceId) return fallbackRoomDeviceId;
+  const bytes = new Uint8Array(32);
+  window.crypto.getRandomValues(bytes);
+  const generated = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+  try { window.localStorage.setItem(ROOM_DEVICE_KEY, generated); } catch { fallbackRoomDeviceId = generated; }
+  return generated;
+}
 const ACTIVE_ROOM_KEY = 'zaily-active-room-v2';
 const draftKey = (roomId: string) => `zaily-room-draft:${roomId}`;
 const awayKey = (roomId: string) => `zaily-room-away:${roomId}`;
@@ -99,7 +114,7 @@ export function StudentRoomV2({ language, firstName, lastName }: { language: Lan
     event.preventDefault(); if (busy) return;
     setBusy(true); setMessage(''); setResult(null);
     try {
-      const data = await requestJson(apiUrl, '/student/rooms/join-v2', '', { method: 'POST', body: JSON.stringify({ code, firstName, lastName }) });
+      const data = await requestJson(apiUrl, '/student/rooms/join-v2', '', { method: 'POST', body: JSON.stringify({ code, firstName, lastName, deviceId: getRoomDeviceId() }) });
       const bearer = data.sessionToken || token(data.roomId);
       if (!bearer) throw new Error('Session token was not returned');
       if (data.sessionToken) storeRoomSession(window.localStorage, data.roomId, data.sessionToken);
