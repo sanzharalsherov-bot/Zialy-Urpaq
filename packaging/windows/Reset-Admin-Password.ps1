@@ -12,7 +12,7 @@ try {
 $email = ([string]$config.email).Trim().ToLowerInvariant()
 $password = [string]$config.password
 if ($email.Length -gt 254) { throw 'Email слишком длинный.' }
-try { $null = New-Object System.Net.Mail.MailAddress($email) } catch { throw 'Введите корректный email администратора.' }
+try { $null = New-Object -TypeName System.Net.Mail.MailAddress -ArgumentList $email } catch { throw 'Введите корректный email администратора.' }
 if ($password.Length -lt 12 -or $password.Length -gt 128) { throw 'Пароль должен содержать от 12 до 128 символов.' }
 if ([Text.Encoding]::UTF8.GetByteCount($password) -gt 72) { throw 'Пароль слишком длинный в UTF-8. Допустимо не более 72 байт.' }
 if ($password -match '[\x00-\x08\x0B\x0C\x0E-\x1F]') { throw 'Пароль содержит недопустимые управляющие символы.' }
