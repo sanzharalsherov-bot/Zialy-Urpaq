@@ -107,6 +107,9 @@ footer{padding:24px 0;color:#9b91a0;font-size:10px}footer strong{color:#5d176a}
 .manualGradeControls .secondaryButton{min-height:42px;font-size:10px}
 .gradeFullButton{color:#3e7953;border-color:#d7e9dc}.gradeFullButton:hover{background:#f0f8f2;border-color:#badac4}
 .gradeZeroButton{color:#a14855;border-color:#efdde0}.gradeZeroButton:hover{background:#fff5f6;border-color:#e5c2c8}
+.teacherCommentField{display:flex;flex-direction:column;gap:6px;min-width:180px;color:#5c4962;font-size:10px;font-weight:750;flex:1 1 100%}
+.teacherCommentField textarea{width:100%;min-height:72px;resize:vertical;border:1px solid #e5d9e8;border-radius:10px;padding:10px 12px;color:#32193b;background:#fff;font:500 12px/1.5 "DM Sans",sans-serif}
+.teacherCommentField textarea:focus{outline:3px solid #a86db444;border-color:#925b9e}
 .manualReviewFooter{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:14px 0;padding:16px;border:1px solid #e9ddec;border-radius:14px;background:#faf7fb}
 .manualReviewFooter p{margin:5px 0 0;color:#897d8d;font-size:10px;line-height:1.5}.manualReviewFooter .primaryButton{min-width:175px}
 .answerPoints{display:inline-block;margin-top:8px}
