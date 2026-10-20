@@ -358,7 +358,6 @@ if ($certificateExport.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $lanCerti
 Import-Certificate -FilePath $lanCertificateFile -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
 try {
   $schoolFirewallRules = @(
-    @{ DisplayName = 'Zaily Urpaq School Platform'; Protocol = 'TCP'; LocalPort = 8080 },
     @{ DisplayName = 'Zaily Urpaq School HTTPS'; Protocol = 'TCP'; LocalPort = 8443 },
     @{ DisplayName = 'Zaily Urpaq LiveKit TCP'; Protocol = 'TCP'; LocalPort = 7881 },
     @{ DisplayName = 'Zaily Urpaq LiveKit UDP'; Protocol = 'UDP'; LocalPort = 7882 }
