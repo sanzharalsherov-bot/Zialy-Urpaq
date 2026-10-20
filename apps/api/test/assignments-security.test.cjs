@@ -143,6 +143,20 @@ test('submitting another student attempt is rejected and ownership is checked in
   assert.match(queries[0].sql, /FOR UPDATE/);
 });
 
+test('teacher-authorized resubmission may be edited after the original due date', async () => {
+  const pastDue = { ...assignment([question('numeric', 'NUMERIC')]), dueAt: new Date(Date.now() - 60_000), timeLimitMinutes: null };
+  let saved = 0;
+  const makeService = finishReason => serviceWith({
+    submission: { findFirst: async () => submission({ status: 'IN_PROGRESS', finishReason, startedAt: new Date(), assignment: pastDue }) },
+    answer: { upsert: async () => { saved++; } },
+  }).service;
+  const payload = { answers: [{ questionId: 'numeric', numericValue: 42 }] };
+  const revised = await makeService('RESUBMISSION').saveAnswers('s1', payload, student);
+  assert.equal(revised.saved, 1);
+  await assert.rejects(() => makeService('STUDENT_SUBMITTED').saveAnswers('s1', payload, student), rejectedStatus(400));
+  assert.equal(saved, 1);
+});
+
 test('unknown questions, repeated questions and fabricated option IDs cannot be submitted', async () => {
   const { service } = serviceWith({ submission: { findFirst: async () => submission() } });
   for (const answers of [
