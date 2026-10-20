@@ -139,7 +139,7 @@ test('production configuration refuses missing, short, or placeholder JWT secret
   for (const JWT_SECRET of ['', 'short', 'replace-with-random-secret-at-least-32-bytes', 'your-secret-' + 'x'.repeat(40)]) {
     assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET }), /JWT_SECRET must be a unique random secret/u);
   }
-  assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET: 'a'.repeat(32), WEB_ORIGIN: '' }), /WEB_ORIGIN must be a valid HTTPS origin/u);
+  assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET: strongSecret, WEB_ORIGIN: '' }), /WEB_ORIGIN must be a valid HTTPS origin/u);
   for (const WEB_ORIGIN of ['http://192.168.1.20:8443', '*', 'https://example.com/path', 'https://user:pass@example.com', 'https://example.com?x=1']) {
     assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET: strongSecret, WEB_ORIGIN }), /WEB_ORIGIN/u, WEB_ORIGIN);
   }
