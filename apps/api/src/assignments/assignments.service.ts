@@ -490,7 +490,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       const finalized = await this.finalizeInTransaction(
         tx, submission.assignmentId, submissionId, { answers }, user, 'PROCTORING_VIOLATION_LIMIT',
       );
-      return { warnings, expired: true, finished: true, finishReason: 'PROCTORING_VIOLATION_LIMIT', ...finalized };
+      return { warnings, expired: true, finished: true, finishReason: finalized.finishReason ?? 'PROCTORING_VIOLATION_LIMIT', ...finalized };
     });
   }
 
@@ -575,9 +575,9 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
         )) : new Date(),
         totalScore: allAuto ? roundedScore(autoScore) : null,
         gradedAt: allAuto ? new Date() : null,
-        finishReason: finishReason ?? (timedOut ? 'TIME_LIMIT' : 'STUDENT_SUBMITTED'),
+        finishReason: timedOut ? 'TIME_LIMIT' : finishReason ?? 'STUDENT_SUBMITTED',
       },
-      select: { id: true, status: true, submittedAt: true, totalScore: true, attemptNo: true },
+      select: { id: true, status: true, submittedAt: true, totalScore: true, attemptNo: true, finishReason: true },
     });
     await enqueueResultExport(tx, submission.id);
     return { ...saved, timedOut, message: timedOut ? 'Время вышло. Ответы сохранены, но попытка отмечена как просроченная.' : allAuto ? 'Ответы проверены автоматически.' : 'Ответы отправлены преподавателю на проверку.' };
