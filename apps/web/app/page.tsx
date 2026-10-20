@@ -510,6 +510,30 @@ export default function Home() {
     finally { setBusy(false); }
   };
 
+  const createSchoolClass = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true); setMessage('');
+    try {
+      await request('/school/classes', { method: 'POST', body: JSON.stringify({ name: classNameDraft, academicYear: academicYearDraft }) });
+      setClassNameDraft('');
+      const classes = await request('/school/classes');
+      setSchoolClasses(classes);
+      if (classes.length && !newStudentClassId) setNewStudentClassId(classes[0].id);
+      setMessage('Класс создан');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось создать класс'); }
+    finally { setBusy(false); }
+  };
+
+  const createSchoolStudent = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true); setMessage('');
+    try {
+      const result = await request('/school/students', { method: 'POST', body: JSON.stringify({ firstName: newStudentFirstName, lastName: newStudentLastName, classId: newStudentClassId, ...(newStudentNo.trim() ? { studentNo: newStudentNo.trim() } : {}) }) });
+      setNewStudentFirstName(''); setNewStudentLastName(''); setNewStudentNo('');
+      setSchoolStudents(await request('/school/students'));
+      setMessage('Ученик ' + result.lastName + ' ' + result.firstName + ' добавлен в список. Для входа ему нужен общий код школы.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось добавить ученика'); }
+    finally { setBusy(false); }
+  };
+
   const saveStudentAccessCode = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true); setMessage('');
