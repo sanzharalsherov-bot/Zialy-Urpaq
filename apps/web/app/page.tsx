@@ -131,6 +131,7 @@ export default function Home() {
   const [roomTargetDraft, setRoomTargetDraft] = useState('30');
   const [roomDurationDraft, setRoomDurationDraft] = useState('');
   const [available, setAvailable] = useState<any[]>([]);
+  const [studentHistory, setStudentHistory] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedResults, setSelectedResults] = useState<any | null>(null);
   const [monitorOpen, setMonitorOpen] = useState(false);
@@ -196,7 +197,7 @@ export default function Home() {
     writeStorage(window.sessionStorage, ATTEMPT_KEY, null);
     writeStorage(window.localStorage, TOKEN_KEY, null);
     setToken(''); setUser(null); setSubmission(null); setSelectedAssignment(null); setSelectedResults(null); setStudentResult(null);
-    setAssignments([]); setAvailable([]); setAccounts([]); setAnswers({}); setManualGrades({}); setManualComments({}); setSubmissionFeedback({});
+    setAssignments([]); setAvailable([]); setStudentHistory([]); setAccounts([]); setAnswers({}); setManualGrades({}); setManualComments({}); setSubmissionFeedback({});
     setPassword(''); setStudentCode(''); setStudentFirstName(''); setStudentLastName(''); setEmail('');
     setAccountPassword(''); setAccountEmail(''); setAccountFirstName(''); setAccountLastName('');
     setStudentAccessCodeInput(''); setStudentAccessCodeConfigured(false); setSchoolClasses([]); setSchoolStudents([]); setClassNameDraft(''); setNewStudentFirstName(''); setNewStudentLastName(''); setNewStudentNo(''); setNewStudentClassId(''); setAssignmentClassId('');
@@ -265,8 +266,8 @@ export default function Home() {
     const load = async () => {
       try {
         if (user.role === 'STUDENT') {
-          const list = await request('/student/assignments');
-          if (!cancelled) setAvailable(list);
+          const [list, history] = await Promise.all([request('/student/assignments'), request('/student/results')]);
+          if (!cancelled) { setAvailable(list); setStudentHistory(history); }
         } else {
           const [stats, list, userList, classes] = await Promise.all([
             request('/dashboard'), request('/assignments'), user.role === 'ADMIN' ? request('/auth/users') : Promise.resolve(null), request('/school/classes'),
@@ -568,6 +569,16 @@ export default function Home() {
     finally { setBusy(false); }
   };
 
+  const openStudentResult = async (submissionId: string) => {
+    setBusy(true); setMessage('');
+    try {
+      const result = await request(`/student/submissions/${submissionId}/result`);
+      setStudentResult(result);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось загрузить результат');
+    } finally { setBusy(false); }
+  };
+
   const startTest = async (event: FormEvent) => {
     event.preventDefault();
     if (busy) return;
@@ -607,7 +618,10 @@ export default function Home() {
       lastAutosavedAnswers.current = {};
       writeStorage(window.sessionStorage, ATTEMPT_KEY, null);
       // A failed list refresh must not make a successful submission look failed.
-      try { const list = await request('/student/assignments'); setAvailable(list); } catch { /* Keep the submission confirmation. */ }
+      try {
+        const [list, history] = await Promise.all([request('/student/assignments'), request('/student/results')]);
+        setAvailable(list); setStudentHistory(history);
+      } catch { /* Keep the submission confirmation. */ }
     } catch (error) {
       // The server may have finalized the deadline while this tab was offline.
       try {
@@ -1052,6 +1066,15 @@ export default function Home() {
           <form className="roomJoinForm" onSubmit={startTest}><label>{t('Код теста')}<input autoComplete="one-time-code" value={roomCode} onChange={event => setRoomCode(event.target.value.toUpperCase())} required minLength={6} maxLength={16} /></label><button className="primaryButton" disabled={busy}>{busy ? t('Подключаемся…') : t('Подключиться к тесту')}</button></form>
           {available.map(a => <div className="studentAssignment" key={a.id}><div className="assignmentIcon">▤</div><div className="assignmentMain"><b>{a.title}</b><p>{a.subject.name} · {a._count.questions} {t("вопросов ·")} {a.timeLimitMinutes ? `${a.timeLimitMinutes} ${t('мин.')}` : t('Без лимита времени')} {t("· До")} {a.dueAt ? new Date(a.dueAt).toLocaleString(dateLocale) : t('без срока')}</p>{a.description && <small>{a.description}</small>}</div></div>)}
           {!available.length && <p className="emptyState">{t("Сейчас нет опубликованных доступных заданий.")}</p>}
+          <div className="panelHead studentHistoryHead"><div><h3>{t('История результатов')}</h3><p>{t('Ранее отправленные работы и оценки')}</p></div></div>
+          {studentHistory.map((item: any) => <article className="studentAssignment" key={item.submissionId}>
+            <div className="assignmentIcon">✓</div>
+            <div className="assignmentMain"><b>{item.assignmentTitle}</b><p>{item.subjectName} · {t('Попытка №')}{item.attemptNo} · {item.submittedAt ? new Date(item.submittedAt).toLocaleString(dateLocale) : t('Отправлено')}</p>
+              <small>{item.score === null ? t('Ожидает проверки') : `${item.score} ${t('баллов')}`}{item.feedback ? ` · ${item.feedback}` : ''}</small>
+            </div>
+            <button className="secondaryButton" disabled={busy} onClick={() => openStudentResult(item.submissionId)}>{t('Посмотреть')}</button>
+          </article>)}
+          {!studentHistory.length && <p className="emptyState">{t('Здесь появятся отправленные работы и отзывы преподавателя.')}</p>}
         </section>}
         {!isStaff && studentResult && <section className="panel workPanel studentResultPanel">
           <div className="panelHead"><div><h3>{t('Результат теста')}</h3><p>{studentResult.assignmentTitle}</p></div><button className="secondaryButton" onClick={() => setStudentResult(null)}>{t('К заданиям')}</button></div>
