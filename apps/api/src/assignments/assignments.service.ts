@@ -764,7 +764,8 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
       const submission = await tx.submission.findFirst({ where: { id: submissionId, assignment: this.staffScope(user) }, select: { id: true, status: true, assignmentId: true } });
       if (!submission) throw new NotFoundException('Работа не найдена');
-      if (![SubmissionStatus.UNDER_REVIEW, SubmissionStatus.GRADED, SubmissionStatus.EXPIRED].includes(submission.status)) {
+      const returnableStatuses: SubmissionStatus[] = [SubmissionStatus.UNDER_REVIEW, SubmissionStatus.GRADED, SubmissionStatus.EXPIRED];
+      if (!returnableStatuses.includes(submission.status)) {
         throw new BadRequestException('Можно вернуть только отправленную на проверку или проверенную работу');
       }
       const updated = await tx.submission.update({ where: { id: submissionId }, data: {
