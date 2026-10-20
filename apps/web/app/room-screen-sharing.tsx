@@ -83,7 +83,8 @@ export function StudentScreenShare({ roomId, sessionToken, language, onWarning }
       roomRef.current = room;
       streamRef.current = captured;
       endedReportedRef.current = false;
-      await reportProctorEvent('SCREEN_SHARE_RESTORED');
+      const monitorReady = await reportProctorEvent('SCREEN_SHARE_RESTORED');
+      if (!monitorReady) throw new Error('Proctoring event could not be recorded');
       video.addEventListener('ended', () => { void stop(true); }, { once: true });
       setSharing(true);
     } catch {
