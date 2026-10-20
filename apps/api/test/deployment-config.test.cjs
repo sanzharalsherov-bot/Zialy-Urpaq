@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
+const { spawnSync } = require('node:child_process');
 const { resolve } = require('node:path');
 const { test } = require('node:test');
 
@@ -86,4 +87,23 @@ test('release smoke check verifies private-LAN HTTPS without credentials or TLS 
   assert.doesNotMatch(smoke, /Authorization:/u);
   assert.match(smoke, /mediaVerified:\s*false/u);
   assert.match(smoke, /backupRestoreVerified:\s*false/u);
+});
+
+test('release smoke check refuses public hosts and non-HTTPS URLs before network access', () => {
+  const script = resolve(__dirname, './qa-release-smoke.mjs');
+  const run = base => spawnSync(process.execPath, [script], {
+    encoding: 'utf8',
+    env: { ...process.env, QA_BASE_URL: base, QA_CA_FILE: 'nonexistent-public-test-ca.crt' },
+  });
+  const publicHost = run('https://example.com');
+  assert.notEqual(publicHost.status, 0);
+  assert.match(publicHost.stderr, /private\/link-local IPv4 address is allowed/u);
+
+  const plainHttp = run('http://192.168.1.20:8443');
+  assert.notEqual(plainHttp.status, 0);
+  assert.match(plainHttp.stderr, /requires HTTPS/u);
+
+  const embeddedCredentials = run('https://user:secret@192.168.1.20:8443');
+  assert.notEqual(embeddedCredentials.status, 0);
+  assert.match(embeddedCredentials.stderr, /Credentials must not be embedded/u);
 });
