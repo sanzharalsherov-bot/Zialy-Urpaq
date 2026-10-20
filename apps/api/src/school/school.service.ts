@@ -15,7 +15,7 @@ export class SchoolService {
   }
 
   async listClasses(user: AuthenticatedUser) {
-    this.requireAdmin(user);
+    if (user.role !== UserRole.ADMIN && user.role !== UserRole.TEACHER) throw new ForbiddenException('Недостаточно прав');
     return this.prisma.schoolClass.findMany({
       orderBy: [{ academicYear: 'desc' }, { name: 'asc' }],
       include: { _count: { select: { students: true, assignments: true } } },
