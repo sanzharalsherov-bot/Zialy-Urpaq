@@ -22,6 +22,12 @@ internal static class InstallerApp
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length > 0 && String.Equals(args[0], "--self-test", StringComparison.OrdinalIgnoreCase))
+        {
+            Environment.ExitCode = ValidateEmbeddedPayload() ? 0 : 1;
+            return;
+        }
+
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
@@ -57,6 +63,26 @@ internal static class InstallerApp
         }
 
         Application.Run(new InstallerForm());
+    }
+
+    private static bool ValidateEmbeddedPayload()
+    {
+        try
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            using (var deployment = assembly.GetManifestResourceStream("Deployment.zip"))
+            using (var installScript = assembly.GetManifestResourceStream("Install.ps1"))
+            using (var logo = assembly.GetManifestResourceStream("BrandLogo.jpg"))
+            {
+                if (deployment == null || deployment.Length < 4 || installScript == null || logo == null)
+                    return false;
+                return deployment.ReadByte() == 0x50 && deployment.ReadByte() == 0x4B;
+            }
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsAdministrator()

@@ -202,6 +202,15 @@ jobs:
             $payloadResource.Dispose()
             $payloadMemory.Dispose()
           }
+      - name: Smoke-test Windows installer executable
+        shell: powershell
+        run: |
+          $installer = Get-ChildItem 'packaging/windows/dist/ZailyUrpaqSetup*.exe' -File | Select-Object -First 1
+          if (-not $installer) { throw 'Built installer executable was not found.' }
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList '--self-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer executable self-test failed with exit code $($process.ExitCode)." }
+          Write-Host 'Installer executable started successfully and read all embedded resources.'
+
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
