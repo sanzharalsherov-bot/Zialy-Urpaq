@@ -65,3 +65,12 @@ test('Windows firewall exposes only the required web and LiveKit ports to the pr
   }
   assert.match(installer, /-RemoteAddress LocalSubnet -Profile Private/u);
 });
+
+test('Windows backup cleans temporary dumps on success and failure paths', () => {
+  const backup = readFileSync(resolve(__dirname, '../../../packaging/windows/Backup.ps1'), 'utf8');
+  assert.match(backup, /function Backup-Database/u);
+  assert.match(backup, /finally\s*\{/u);
+  assert.match(backup, /'rm',\s*'-f',\s*\$RemoteDumpPath/u);
+  assert.match(backup, /if \(-not \$backupSucceeded -and \(Test-Path -LiteralPath \$FilePath\)\)/u);
+  assert.match(backup, /Write-Warning .*Проверьте контейнер вручную/u);
+});
