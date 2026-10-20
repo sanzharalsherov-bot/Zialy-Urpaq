@@ -54,9 +54,8 @@ test('school LAN has persistent HTTPS and WSS configuration', () => {
   assert.match(installer, /lan-root-ca\.crt/u);
 });
 
-test('Windows firewall exposes only the required web and LiveKit ports to the private local subnet', () => {
+test('Windows Firewall opens only HTTPS and LiveKit ports to the private local subnet', () => {
   for (const [displayName, protocol, port] of [
-    ['Zaily Urpaq School Platform', 'TCP', '8080'],
     ['Zaily Urpaq School HTTPS', 'TCP', '8443'],
     ['Zaily Urpaq LiveKit TCP', 'TCP', '7881'],
     ['Zaily Urpaq LiveKit UDP', 'UDP', '7882'],
@@ -65,6 +64,7 @@ test('Windows firewall exposes only the required web and LiveKit ports to the pr
     assert.match(installer, new RegExp(`DisplayName = '${escapedName}'; Protocol = '${protocol}'; LocalPort = ${port}`, 'u'));
   }
   assert.match(installer, /-RemoteAddress LocalSubnet -Profile Private/u);
+  assert.doesNotMatch(installer, /DisplayName = 'Zaily Urpaq School Platform'; Protocol = 'TCP'; LocalPort = 8080/u);
 });
 
 test('Windows backup cleans temporary dumps on success and failure paths', () => {
