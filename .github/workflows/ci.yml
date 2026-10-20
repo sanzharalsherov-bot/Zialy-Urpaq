@@ -85,7 +85,7 @@ jobs:
             -v "${{ github.workspace }}:/workspace:ro" \
             -e TEST_DATABASE_URL -e TEST_RESULTS_DATABASE_URL \
             postgres:17-alpine sh -ec '
-              if ! psql "$TEST_DATABASE_URL" -Atqc "SELECT 1 FROM pg_database WHERE datname = '''schoolresults_test'''" | grep -qx 1; then
+              if ! psql "$TEST_DATABASE_URL" -Atqc "SELECT 1 FROM pg_database WHERE datname = $schoolresults_test$" | grep -qx 1; then
                 psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE schoolresults_test"
               fi
               psql "$TEST_RESULTS_DATABASE_URL" -v ON_ERROR_STOP=1 -f /workspace/prisma/results-database/init/001-results.sql
