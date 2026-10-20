@@ -57,3 +57,8 @@ test('admin recovery embeds Node code as static base64 so PowerShell parses the 
   assert.match(nodeSource, /bcrypt\.hash\(password, 12\)/u);
   assert.match(nodeSource, /ADMIN_PASSWORD_RESET_OK/u);
 });
+
+
+test('admin recovery script uses UTF-8 BOM for Windows PowerShell 5.1 Cyrillic text', () => {
+  assert.equal(recovery.charCodeAt(0), 0xFEFF, 'UTF-8 BOM is required so Windows PowerShell 5.1 does not decode Cyrillic as ANSI');
+});
