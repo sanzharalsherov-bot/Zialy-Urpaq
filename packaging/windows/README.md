@@ -102,7 +102,7 @@ Token сохраняется в `.env` с ограниченными права�
 
 ```powershell
 $env:QA_BASE_URL = 'https://192.168.1.20:8443'
-$env:QA_CA_FILE = 'C:\\path\\to\\lan-root-ca.crt'
+$env:QA_CA_FILE = 'C:\path\to\lan-root-ca.crt'
 node apps/api/test/qa-release-smoke.mjs
 ```
 
