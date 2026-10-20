@@ -1,4 +1,4 @@
-# Local-only administrator password recovery. The password is sent to Docker over stdin,
+﻿# Local-only administrator password recovery. The password is sent to Docker over stdin,
 # never passed as a command-line argument and never written to logs or .env.
 $ErrorActionPreference = 'Stop'
 
@@ -52,35 +52,9 @@ if ($parts.Count -ne 2 -or $parts[0] -ne 'true' -or $parts[1] -ne $projectName) 
   throw 'API-контейнер не принадлежит текущему Docker-проекту или не запущен. Ничего не изменено.'
 }
 
-# Fixed JavaScript code is base64-encoded into the command line. The supplied email
-# and password remain JSON input on stdin and are not exposed in process arguments.
-$nodeSource = @'
-const fs = require("node:fs");
-const { PrismaClient } = require("@prisma/client");
-const bcrypt = require("bcryptjs");
-const payload = JSON.parse(fs.readFileSync(0, "utf8"));
-(async () => {
-  const prisma = new PrismaClient();
-  try {
-    const email = String(payload.email || "").trim().toLowerCase();
-    const password = String(payload.password || "");
-    const user = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true, isActive: true } });
-    if (!user || user.role !== "ADMIN") throw new Error("ADMIN_ACCOUNT_NOT_FOUND");
-    if (!user.isActive) throw new Error("ADMIN_ACCOUNT_INACTIVE");
-    const passwordHash = await bcrypt.hash(password, 12);
-    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
-    process.stdout.write("ADMIN_PASSWORD_RESET_OK\n");
-  } catch (error) {
-    const code = error && typeof error.message === "string" ? error.message : "";
-    if (code === "ADMIN_ACCOUNT_NOT_FOUND" || code === "ADMIN_ACCOUNT_INACTIVE") console.error(code);
-    else console.error("ADMIN_PASSWORD_RESET_FAILED");
-    process.exitCode = 1;
-  } finally {
-    await prisma.$disconnect();
-  }
-})();
-'@
-$nodeSourceBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($nodeSource))
+# The fixed Node payload is stored as base64 so PowerShell never parses JavaScript syntax.
+# The email and password remain JSON input on stdin and are not exposed in process arguments.
+$nodeSourceBase64 = 'Y29uc3QgZnMgPSByZXF1aXJlKCJub2RlOmZzIik7CmNvbnN0IHsgUHJpc21hQ2xpZW50IH0gPSByZXF1aXJlKCJAcHJpc21hL2NsaWVudCIpOwpjb25zdCBiY3J5cHQgPSByZXF1aXJlKCJiY3J5cHRqcyIpOwpjb25zdCBwYXlsb2FkID0gSlNPTi5wYXJzZShmcy5yZWFkRmlsZVN5bmMoMCwgInV0ZjgiKSk7Cihhc3luYyAoKSA9PiB7CiAgY29uc3QgcHJpc21hID0gbmV3IFByaXNtYUNsaWVudCgpOwogIHRyeSB7CiAgICBjb25zdCBlbWFpbCA9IFN0cmluZyhwYXlsb2FkLmVtYWlsIHx8ICIiKS50cmltKCkudG9Mb3dlckNhc2UoKTsKICAgIGNvbnN0IHBhc3N3b3JkID0gU3RyaW5nKHBheWxvYWQucGFzc3dvcmQgfHwgIiIpOwogICAgY29uc3QgdXNlciA9IGF3YWl0IHByaXNtYS51c2VyLmZpbmRVbmlxdWUoeyB3aGVyZTogeyBlbWFpbCB9LCBzZWxlY3Q6IHsgaWQ6IHRydWUsIHJvbGU6IHRydWUsIGlzQWN0aXZlOiB0cnVlIH0gfSk7CiAgICBpZiAoIXVzZXIgfHwgdXNlci5yb2xlICE9PSAiQURNSU4iKSB0aHJvdyBuZXcgRXJyb3IoIkFETUlOX0FDQ09VTlRfTk9UX0ZPVU5EIik7CiAgICBpZiAoIXVzZXIuaXNBY3RpdmUpIHRocm93IG5ldyBFcnJvcigiQURNSU5fQUNDT1VOVF9JTkFDVElWRSIpOwogICAgY29uc3QgcGFzc3dvcmRIYXNoID0gYXdhaXQgYmNyeXB0Lmhhc2gocGFzc3dvcmQsIDEyKTsKICAgIGF3YWl0IHByaXNtYS51c2VyLnVwZGF0ZSh7IHdoZXJlOiB7IGlkOiB1c2VyLmlkIH0sIGRhdGE6IHsgcGFzc3dvcmRIYXNoIH0gfSk7CiAgICBwcm9jZXNzLnN0ZG91dC53cml0ZSgiQURNSU5fUEFTU1dPUkRfUkVTRVRfT0tcbiIpOwogIH0gY2F0Y2ggKGVycm9yKSB7CiAgICBjb25zdCBjb2RlID0gZXJyb3IgJiYgdHlwZW9mIGVycm9yLm1lc3NhZ2UgPT09ICJzdHJpbmciID8gZXJyb3IubWVzc2FnZSA6ICIiOwogICAgaWYgKGNvZGUgPT09ICJBRE1JTl9BQ0NPVU5UX05PVF9GT1VORCIgfHwgY29kZSA9PT0gIkFETUlOX0FDQ09VTlRfSU5BQ1RJVkUiKSBjb25zb2xlLmVycm9yKGNvZGUpOwogICAgZWxzZSBjb25zb2xlLmVycm9yKCJBRE1JTl9QQVNTV09SRF9SRVNFVF9GQUlMRUQiKTsKICAgIHByb2Nlc3MuZXhpdENvZGUgPSAxOwogIH0gZmluYWxseSB7CiAgICBhd2FpdCBwcmlzbWEuJGRpc2Nvbm5lY3QoKTsKICB9Cn0pKCk7'
 $nodeExpression = "eval(Buffer.from('$nodeSourceBase64','base64').toString('utf8'))"
 
 $processInfo = New-Object Diagnostics.ProcessStartInfo

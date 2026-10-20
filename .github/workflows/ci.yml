@@ -136,7 +136,8 @@ jobs:
           $files = @(
             'packaging/windows/Build-Installer.ps1',
             'packaging/windows/install.ps1',
-            'packaging/windows/Backup.ps1'
+            'packaging/windows/Backup.ps1',
+            'packaging/windows/Reset-Admin-Password.ps1'
           )
           foreach ($file in $files) {
             $tokens = $null
