@@ -113,6 +113,10 @@ jobs:
         run: node --test apps/api/test/results-outbox-postgres.test.cjs
       - name: Build production applications
         run: npm run build
+      - name: Build production Docker images
+        run: |
+          docker build --file apps/api/Dockerfile --tag zailyurpaq-api:ci .
+          docker build --file apps/web/Dockerfile --tag zailyurpaq-web:ci .
 
   windows-installer:
     name: Build Windows installer
