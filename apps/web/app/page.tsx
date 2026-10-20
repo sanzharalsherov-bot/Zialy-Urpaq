@@ -12,9 +12,9 @@ const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 
 type User = { id: string; email: string; firstName?: string; lastName?: string; role: string };
 type OptionDraft = { text: string; isCorrect: boolean };
-type QuestionDraft = { type: 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'SHORT_TEXT'; prompt: string; points: number; options: OptionDraft[] };
+type QuestionDraft = { type: 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'SHORT_TEXT' | 'LONG_TEXT' | 'NUMERIC'; prompt: string; points: number; options: OptionDraft[]; correctValue: number; tolerance: number };
 const newQuestion = (): QuestionDraft => ({
-  type: 'SINGLE_CHOICE', prompt: '', points: 1,
+  type: 'SINGLE_CHOICE', prompt: '', points: 1, correctValue: 0, tolerance: 0,
   options: [{ text: '', isCorrect: true }, { text: '', isCorrect: false }],
 });
 
@@ -367,7 +367,8 @@ export default function Home() {
     let createdId: string | null = null;
     try {
       if (!subjectName.trim() || !title.trim() || questions.some(q => !q.prompt.trim())) throw new Error('Введите предмет, название и текст каждого вопроса');
-      if (questions.some(q => q.type !== 'SHORT_TEXT' && !validPoints(Number(q.points), 0.01))) throw new Error('Укажите баллы от 0.01 до 10000, не более двух знаков после запятой');
+      if (questions.some(q => !['SHORT_TEXT', 'LONG_TEXT'].includes(q.type) && !validPoints(Number(q.points), 0.01))) throw new Error('Укажите баллы от 0.01 до 10000, не более двух знаков после запятой');
+      if (questions.some(q => q.type === 'NUMERIC' && (!Number.isFinite(q.correctValue) || Math.abs(q.correctValue) > 9999999999.9999 || Math.abs(q.correctValue * 10000 - Math.round(q.correctValue * 10000)) > 1e-7 || !Number.isFinite(q.tolerance) || q.tolerance < 0))) throw new Error('Проверьте правильный числовой ответ и допустимую погрешность');
       const payload = {
         title: title.trim(), subjectName: subjectName.trim(), description: description.trim() || undefined,
         timeLimitMinutes: timeLimit ? Number(timeLimit) : undefined,
@@ -376,7 +377,8 @@ export default function Home() {
         shuffleQuestions,
         shuffleOptions,
         questions: questions.map(q => ({
-          type: q.type, prompt: q.prompt.trim(), ...(q.type !== 'SHORT_TEXT' ? { points: Number(q.points) } : {}),
+          type: q.type, prompt: q.prompt.trim(), ...(!['SHORT_TEXT', 'LONG_TEXT'].includes(q.type) ? { points: Number(q.points) } : {}),
+          ...(q.type === 'NUMERIC' ? { config: { correctValue: Number(q.correctValue), tolerance: Number(q.tolerance) } } : {}),
           ...(q.type === 'SINGLE_CHOICE' || q.type === 'MULTIPLE_CHOICE'
             ? { options: q.options.map(o => ({ text: o.text.trim(), isCorrect: o.isCorrect })) }
             : {}),
@@ -915,13 +917,14 @@ export default function Home() {
                   ...(type === 'SINGLE_CHOICE' ? { options: q.options.map((o, i) => ({ ...o, isCorrect: i === Math.max(0, q.options.findIndex(x => x.isCorrect)) })) } : {}),
                 });
               }}>
-                <option value="SINGLE_CHOICE">{t("Один правильный вариант")}</option><option value="MULTIPLE_CHOICE">{t("Несколько правильных вариантов")}</option><option value="SHORT_TEXT">{t("Текст — проверяет преподаватель")}</option>
-              </select></label>{q.type !== 'SHORT_TEXT' && <label>{t("Максимум баллов")}<input type="number" min="0.01" max="10000" step="0.01" value={q.points} onChange={e => updateQuestion(qi, { points: Number(e.target.value) })} required /></label>}</div>
+                <option value="SINGLE_CHOICE">{t("Один правильный вариант")}</option><option value="MULTIPLE_CHOICE">{t("Несколько правильных вариантов")}</option><option value="NUMERIC">{t("Числовой ответ с автопроверкой")}</option><option value="SHORT_TEXT">{t("Короткий текст — проверяет преподаватель")}</option><option value="LONG_TEXT">{t("Развёрнутый ответ — проверяет преподаватель")}</option>
+              </select></label>{!['SHORT_TEXT', 'LONG_TEXT'].includes(q.type) && <label>{t("Максимум баллов")}<input type="number" min="0.01" max="10000" step="0.01" value={q.points} onChange={e => updateQuestion(qi, { points: Number(e.target.value) })} required /></label>}</div>
+              {q.type === 'NUMERIC' && <div className="formGrid"><label>{t('Правильный числовой ответ')}<input type="number" step="any" value={q.correctValue} onChange={e => updateQuestion(qi, { correctValue: Number(e.target.value) })} required /></label><label>{t('Допустимая погрешность')}<input type="number" min="0" step="any" value={q.tolerance} onChange={e => updateQuestion(qi, { tolerance: Number(e.target.value) })} required /></label></div>}
               {(q.type === 'SINGLE_CHOICE' || q.type === 'MULTIPLE_CHOICE') && <div className="optionsEditor"><div className="optionsTitle">{t("Варианты ответов")} <small>{t("Отметьте правильный вариант")}</small></div>
                 {q.options.map((o, oi) => <div className="optionDraft" key={oi}><input type={q.type === 'SINGLE_CHOICE' ? 'radio' : 'checkbox'} name={`correct-${qi}`} checked={o.isCorrect} onChange={e => updateOption(qi, oi, { isCorrect: e.target.checked })} aria-label={language === 'kk' ? `${oi + 1}-нұсқа — дұрыс жауап` : language === 'en' ? `Option ${oi + 1} — correct answer` : `Вариант ${oi + 1} — правильный ответ`} /><input maxLength={500} value={o.text} onChange={e => updateOption(qi, oi, { text: e.target.value })} placeholder={language === 'kk' ? `${oi + 1}-нұсқа` : language === 'en' ? `Option ${oi + 1}` : `Вариант ${oi + 1}`} required /><button type="button" className="removeOptionButton" onClick={() => removeOption(qi, oi)} disabled={q.options.length <= 2} title={q.options.length <= 2 ? t('Нужно оставить минимум два варианта') : t('Удалить вариант')} aria-label={language === 'kk' ? `${oi + 1}-нұсқаны жою` : language === 'en' ? `Remove option ${oi + 1}` : `Удалить вариант ${oi + 1}`}>×</button></div>)}
                 <button type="button" className="textButton" disabled={q.options.length >= 100} onClick={() => updateQuestion(qi, { options: [...q.options, { text: '', isCorrect: false }] })}>{t("+ Добавить вариант")}</button>
               </div>}
-              {q.type === 'SHORT_TEXT' && <p className="helperText">{t('Баллы за текстовый ответ преподаватель выставляет при проверке.')}</p>}
+              {['SHORT_TEXT', 'LONG_TEXT'].includes(q.type) && <p className="helperText">{t('Баллы за текстовый ответ преподаватель выставляет при проверке.')}</p>}
             </div>)}
             <button type="button" className="secondaryButton addQuestion" disabled={questions.length >= 200} onClick={() => setQuestions(old => [...old, newQuestion()])}>{t("+ Добавить вопрос")}</button>
             <div className="builderSectionHeading"><span>{t("Дополнительные настройки")}</span><small>{t("Ограничения применяются ко всему тесту.")}</small></div>
