@@ -142,3 +142,13 @@ test('production configuration refuses missing, short, or placeholder JWT secret
   assert.doesNotThrow(() => validateProductionConfiguration({ ...base, JWT_SECRET: 'r'.repeat(48) }));
   assert.doesNotThrow(() => validateProductionConfiguration({ NODE_ENV: 'test' }));
 });
+
+
+test('production API and web containers run as the unprivileged Node user', () => {
+  const apiDockerfile = readFileSync(resolve(__dirname, '../../../apps/api/Dockerfile'), 'utf8');
+  const webDockerfile = readFileSync(resolve(__dirname, '../../../apps/web/Dockerfile'), 'utf8');
+  assert.match(apiDockerfile, /ENV NODE_ENV=production[\s\S]*?USER node[\s\S]*?EXPOSE 4000/u);
+  assert.match(webDockerfile, /COPY --chown=node:node --from=build[\s\S]*?USER node[\s\S]*?EXPOSE 3000/u);
+  assert.doesNotMatch(apiDockerfile, /USER root/u);
+  assert.doesNotMatch(webDockerfile, /USER root/u);
+});
