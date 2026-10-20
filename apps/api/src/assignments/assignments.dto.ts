@@ -1,5 +1,5 @@
 import {
-  ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional,
+  ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional,
   IsString, IsObject, IsIn, IsDateString, Matches, Max, MaxLength, Min, MinLength, ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -66,6 +66,9 @@ export class CreateAssignmentDto {
 
   @IsOptional() @IsString() @MaxLength(100)
   classId?: string;
+
+  @IsOptional() @IsArray() @ArrayMaxSize(500) @ArrayUnique() @IsString({ each: true }) @MinLength(1, { each: true }) @MaxLength(100, { each: true })
+  studentIds?: string[];
 
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => CreateQuestionDto)
   questions!: CreateQuestionDto[];

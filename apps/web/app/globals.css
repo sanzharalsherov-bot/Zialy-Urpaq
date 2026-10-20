@@ -175,3 +175,44 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible,te
 .studentAnswerReviewRow .status{display:inline-flex;margin-top:4px}
 .studentResultPanel .manualReviewFooter p{white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:720px){.studentHistoryHead{align-items:flex-start}.studentAssignment>.secondaryButton{margin-left:auto}}
+
+
+.assignmentStudentPicker {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border, #dedbe8);
+  border-radius: 14px;
+  background: var(--surface-soft, rgba(101, 88, 217, 0.04));
+  min-width: 0;
+}
+.assignmentStudentPickerHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.assignmentStudentPickerHead small { color: var(--muted, #777); }
+.assignmentStudentRoster {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 8px;
+  max-height: 240px;
+  overflow: auto;
+  padding-right: 4px;
+}
+.assignmentStudentOption {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border, #dedbe8);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  cursor: pointer;
+}
+.assignmentStudentOption input { flex: 0 0 auto; width: 16px; height: 16px; }
+.assignmentStudentOption span { overflow: hidden; text-overflow: ellipsis; }
+.assignmentStudentOption small { margin-left: auto; color: var(--muted, #777); white-space: nowrap; }

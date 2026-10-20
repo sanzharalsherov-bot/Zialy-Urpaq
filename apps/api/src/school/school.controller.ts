@@ -43,6 +43,12 @@ export class SchoolController {
     return this.school.listStudents(user, classId);
   }
 
+  @Get('assignment-roster')
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  listAssignmentRoster(@CurrentUser() user: AuthenticatedUser, @Query('classId') classId?: string) {
+    return this.school.listAssignmentRoster(user, classId);
+  }
+
   @Post('students')
   @Roles(UserRole.ADMIN)
   createStudent(@Body() dto: CreateStudentDto, @CurrentUser() user: AuthenticatedUser) {
