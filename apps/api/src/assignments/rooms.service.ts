@@ -250,7 +250,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     const ipKey = createHash('sha256').update(`room-v2:${source}:${deviceKey}`).digest('hex');
     const ipSignalKey = createHash('sha256').update(`room-v2-ip:${source}`).digest('hex');
     const blocked = await this.prisma.roomJoinAttempt.findUnique({ where: { ipKey }, select: { blockedUntil: true } });
-    if (blocked?.blockedUntil && blocked.blockedUntil > new Date()) throw new HttpException('Слишком много неверных кодов. Попробуйте через 15 минут.', HttpStatus.TOO_MANY_REQUESTS);
+    if (!token && blocked?.blockedUntil && blocked.blockedUntil > new Date()) throw new HttpException('Слишком много неверных кодов. Попробуйте через 15 минут.', HttpStatus.TOO_MANY_REQUESTS);
     const roomRecord = await this.prisma.testRoom.findUnique({ where: { joinCode: code }, select: { id: true } });
     if (!roomRecord) return this.rejectInvalidRoomCode(ipKey, ipSignalKey);
     const freshToken = token ? undefined : randomBytes(32).toString('base64url');
