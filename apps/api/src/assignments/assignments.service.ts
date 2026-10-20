@@ -588,7 +588,24 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
     const identityKey = this.studentIdentityKey(user);
     const submission = await this.prisma.submission.findFirst({
       where: { id: submissionId, studentIdentityKey: identityKey },
-      select: { id: true, assignmentId: true, status: true, totalScore: true, submittedAt: true, startedAt: true, finishReason: true, assignment: { select: { title: true } } },
+      select: {
+        id: true, assignmentId: true, status: true, totalScore: true, submittedAt: true, startedAt: true,
+        finishReason: true, feedback: true,
+        assignment: { select: { title: true } },
+        answers: {
+          orderBy: { question: { position: 'asc' } },
+          select: {
+            textValue: true, numericValue: true, jsonValue: true, awardedPoints: true,
+            teacherComment: true, isCorrect: true,
+            question: {
+              select: {
+                id: true, prompt: true, type: true, points: true,
+                options: { orderBy: { position: 'asc' }, select: { id: true, text: true, position: true } },
+              },
+            },
+          },
+        },
+      },
     });
     if (!submission || submission.status === SubmissionStatus.WAITING || submission.status === SubmissionStatus.IN_PROGRESS) throw new NotFoundException('Завершённый результат не найден');
     type Leader = { id: string; rank: bigint; firstName: string; lastName: string; score: number; durationMs: number; correctCount: number };
@@ -618,6 +635,23 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       finishReason: submission.finishReason,
       score: submission.totalScore === null ? null : Number(submission.totalScore),
       submittedAt: submission.submittedAt,
+      feedback: submission.feedback,
+      answers: submission.answers.map(answer => ({
+        question: {
+          id: answer.question.id,
+          prompt: answer.question.prompt,
+          type: answer.question.type,
+          points: Number(answer.question.points),
+          // Student review may show option labels, but never correctness flags or answer-key config.
+          options: answer.question.options.map(option => ({ id: option.id, text: option.text })),
+        },
+        textValue: answer.textValue,
+        numericValue: answer.numericValue === null ? null : Number(answer.numericValue),
+        jsonValue: answer.jsonValue,
+        awardedPoints: answer.awardedPoints === null ? null : Number(answer.awardedPoints),
+        teacherComment: answer.teacherComment,
+        isCorrect: answer.isCorrect,
+      })),
       rank: mine ? Number(mine.rank) : null,
       correctCount: mine?.correctCount ?? 0,
       durationMs: mine?.durationMs ?? Math.max(0, (submission.submittedAt?.getTime() ?? Date.now()) - submission.startedAt.getTime()),
