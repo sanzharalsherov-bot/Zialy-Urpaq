@@ -865,7 +865,7 @@ export default function Home() {
   }, [timeRemaining, submission?.id, submission?.status, onlineRetry]);
 
   useEffect(() => {
-    if (!token || user?.role !== 'STUDENT' || !studentResult?.submissionId || studentResult.score !== null) return;
+    if (!token || user?.role !== 'STUDENT' || !studentResult?.submissionId || studentResult.score !== null || studentResult.status === 'RETURNED') return;
     const poll = async () => {
       try {
         const result = await request(`/student/submissions/${studentResult.submissionId}/result`);
