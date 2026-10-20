@@ -4,7 +4,7 @@ require('reflect-metadata');
 const { plainToInstance } = require('class-transformer');
 const { validate } = require('class-validator');
 const { AssignmentsService } = require('../dist/assignments/assignments.service');
-const { CreateAssignmentDto, SubmitAnswersDto, GradeSubmissionDto } = require('../dist/assignments/assignments.dto');
+const { CreateAssignmentDto, SubmitAnswersDto, GradeSubmissionDto, ReturnSubmissionDto } = require('../dist/assignments/assignments.dto');
 
 const admin = { sub: 'admin', role: 'ADMIN' };
 const teacher = { sub: 'teacher', role: 'TEACHER' };
@@ -27,6 +27,41 @@ function serviceWith(tx) {
   return { service: new AssignmentsService(prisma), tx, queries };
 }
 const rejectedStatus = status => error => error?.getStatus?.() === status;
+
+test('returning and reopening work is role-, owner-, and state-restricted', async () => {
+  const queries = [];
+  const existing = { id: 's1', assignmentId: 'a1', status: 'UNDER_REVIEW', submittedAt: new Date(), assignment: assignment(), answers: [] };
+  const tx = {
+    submission: {
+      findFirst: async args => {
+        if (args.where.assignment) return existing;
+        if (args.where.studentIdentityKey) return { id: 's1' };
+        return null;
+      },
+      update: async ({ data }) => ({ ...existing, ...data }),
+    },
+    assignment: {},
+    auditLog: { create: async () => {} },
+    $queryRaw: async (strings, ...values) => { queries.push(strings.join('?')); return []; },
+  };
+  const { service } = serviceWith(tx);
+  const returned = await service.returnSubmission('s1', 'Please correct the written answer', teacher);
+  assert.equal(returned.status, 'RETURNED');
+  assert.equal(returned.feedback, 'Please correct the written answer');
+  assert.equal(returned.totalScore, null);
+  const reopened = await service.reopenReturned('s1', student);
+  assert.equal(reopened.submission.status, 'IN_PROGRESS');
+  assert.equal(reopened.assignment.id, 'a1');
+  assert.ok(queries.every(sql => sql.includes('FOR UPDATE')));
+  await assert.rejects(() => service.returnSubmission('s1', undefined, student), rejectedStatus(403));
+  await assert.rejects(() => service.reopenReturned('s1', teacher), rejectedStatus(403));
+});
+
+test('return feedback DTO rejects non-string or oversized feedback', async () => {
+  for (const input of [{ feedback: 12 }, { feedback: 'x'.repeat(10001) }]) {
+    assert.ok((await validate(plainToInstance(ReturnSubmissionDto, input))).length > 0);
+  }
+});
 
 test('student cannot call staff operations, and only admin may delete', async () => {
   const { service } = serviceWith({});
