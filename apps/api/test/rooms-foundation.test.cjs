@@ -15,7 +15,7 @@ function fakePrisma() {
   const prisma = {
     rooms,
     assignment: { findFirst: async ({ where }) => where.id === 'assignment-1' && (!where.creatorId || where.creatorId === 'teacher-1')
-      ? { id: 'assignment-1', creatorId: 'teacher-1', status: 'PUBLISHED', timeLimitMinutes: 25 } : null },
+      ? { id: 'assignment-1', creatorId: 'teacher-1', status: 'PUBLISHED', timeLimitMinutes: 25, questions: [{ id: 'q1', type: 'SINGLE_CHOICE', options: [{ isCorrect: true }, { isCorrect: false }] }] } : null },
     testRoom: {
       create: async ({ data }) => {
         const row = { id: `room-${rooms.length + 1}`, ...data, status: 'LOBBY', startedAt: null, _count: { participants: 0 }, assignment: { title: 'Math' } };
@@ -78,6 +78,21 @@ test('creates separate six-digit room codes for the same assignment', async () =
   assert.match(one.joinCode, /^\d{6}$/u); assert.match(two.joinCode, /^\d{6}$/u);
   assert.notEqual(one.id, two.id); assert.notEqual(one.joinCode, two.joinCode);
   assert.equal(one.durationMinutes, 25);
+});
+
+test('room creation rejects unsupported or ungradable question types before reserving a code', async () => {
+  const db = fakePrisma();
+  const original = db.assignment.findFirst;
+  db.assignment.findFirst = async args => {
+    const assignment = await original(args);
+    return assignment ? { ...assignment, questions: [{ id: 'numeric-q', type: 'NUMERIC', options: [] }] } : null;
+  };
+  const service = new RoomsService(db);
+  await assert.rejects(
+    () => service.createRoom('assignment-1', { lobbyTarget: 10 }, { sub: 'teacher-1', role: 'TEACHER' }),
+    error => error.getStatus() === 400 && /только вопросы/u.test(error.message),
+  );
+  assert.equal(db.rooms.length, 0);
 });
 
 test('teacher scope prevents access to another teacher assignment', async () => {
