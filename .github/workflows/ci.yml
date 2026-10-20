@@ -19,6 +19,12 @@ on:
 permissions:
   contents: read
 
+# Push and pull_request events can both validate the same commit. Keep only the
+# newest run for a branch to avoid wasting CI minutes on superseded revisions.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     name: Tests and production build
