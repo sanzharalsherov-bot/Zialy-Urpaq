@@ -437,11 +437,17 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       const room = await tx.testRoom.findUnique({ where: { id: roomId }, select: { status: true, snapshot: true } });
       if (!room || room.status !== RoomStatus.RUNNING) throw new BadRequestException('Тест уже завершён');
       const latest = await tx.proctorEvent.findFirst({ where: { submissionId: current.id }, orderBy: { createdAt: 'desc' }, select: { eventType: true } });
-      if (dto.eventType === 'VISIBILITY_RESTORED') {
-        if (latest?.eventType === 'VISIBILITY_HIDDEN') await tx.proctorEvent.create({ data: { submissionId: current.id, eventType: dto.eventType } });
+      const episodeEvents = ['VISIBILITY_HIDDEN', 'SCREEN_SHARE_ENDED'];
+      const restoreEvents = ['VISIBILITY_RESTORED', 'SCREEN_SHARE_RESTORED'];
+      if (restoreEvents.includes(dto.eventType)) {
+        if (latest?.eventType && episodeEvents.includes(latest.eventType)) {
+          await tx.proctorEvent.create({ data: { submissionId: current.id, eventType: dto.eventType } });
+        }
         return { warnings: current.proctorWarnings, finished: false };
       }
-      if (latest?.eventType === 'VISIBILITY_HIDDEN') return { warnings: current.proctorWarnings, finished: false, duplicate: true };
+      if (latest?.eventType && episodeEvents.includes(latest.eventType)) {
+        return { warnings: current.proctorWarnings, finished: false, duplicate: true };
+      }
       const warnings = current.proctorWarnings + 1;
       await tx.proctorEvent.create({ data: { submissionId: current.id, eventType: dto.eventType } });
       await tx.submission.update({ where: { id: current.id }, data: { proctorWarnings: warnings } });
