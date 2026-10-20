@@ -27,6 +27,15 @@ export default function Home() {
   };
   const extraPhrases: Record<string, [string, string]> = {
     'Вернуть на исправление':['Қайта түзетуге қайтару','Return for revision'],
+    'Кому назначить':['Кімге тағайындау','Assign to'],
+    'Выбрано учеников':['Таңдалған оқушылар','Students selected'],
+    'Если не выбирать учеников, задание получит весь класс.':['Оқушыларды таңдамасаңыз, тапсырманы бүкіл сынып алады.','If no students are selected, the whole class will receive the assignment.'],
+    'В выбранном классе нет активных учеников.':['Таңдалған сыныпта белсенді оқушылар жоқ.','There are no active students in the selected class.'],
+    'Не удалось загрузить учеников класса':['Сынып оқушыларын жүктеу мүмкін болмады','Could not load students in this class'],
+    'Выбраны отдельные ученики':['Жеке оқушылар таңдалды','Individual students selected'],
+    'Весь класс':['Бүкіл сынып','Whole class'],
+    'Все ученики':['Барлық оқушылар','All students'],
+
     'Работа возвращена ученику на исправление':['Жұмыс оқушыға түзетуге қайтарылды','Work returned to the student for revision'],
     'Работа возвращена на исправление':['Жұмыс түзетуге қайтарылды','Work returned for revision'],
     'Исправьте ответы и отправьте работу повторно.':['Жауаптарды түзетіп, жұмысты қайта жіберіңіз.','Correct your answers and resubmit the work.'],
@@ -970,7 +979,7 @@ export default function Home() {
           <div className="roomManagerControls"><b>{t('Аналитика комнаты')}</b><label>{t('Выберите комнату для аналитики')}<select value={selectedAnalyticsRoom} onChange={event => { setSelectedAnalyticsRoom(event.target.value); setRoomAnalytics(null); }}><option value="">—</option>{Object.values(roomsByAssignment).flat().map((room: any) => <option value={room.id} key={room.id}>{room.assignmentTitle} · {room.joinCode}</option>)}</select></label><button type="button" className="secondaryButton" disabled={!selectedAnalyticsRoom || busy} onClick={() => void loadRoomAnalytics()}>{t('Показать аналитику')}</button></div>
           {roomAnalytics && <section className="analyticsPanel panel"><div className="analyticsHeading"><div><h3>{roomAnalytics.assignmentTitle}</h3><p>{roomAnalytics.attemptCount} {t('завершённых попыток')}</p></div><span>{t('Аналитика комнаты')}</span></div><div className="analyticsKpis"><article><span>{t('Средний результат')}</span><strong>{roomAnalytics.summary.averageScore}/{roomAnalytics.summary.maximumScore}</strong><small>{roomAnalytics.summary.averagePercent}%</small></article><article><span>{t('Медианное время')}</span><strong>{roomAnalytics.summary.medianDurationSeconds === null ? '—' : `${Math.floor(roomAnalytics.summary.medianDurationSeconds / 60)}:${String(roomAnalytics.summary.medianDurationSeconds % 60).padStart(2, '0')}`}</strong><small>{t('мин.')}</small></article></div><div className="analyticsCard"><div className="analyticsCardHead"><h4>{t('Частые ошибки по вопросам')}</h4></div><div className="masteryChart">{roomAnalytics.questions.map((question: any) => <div className="masteryRow" key={question.questionId}><div className="masteryLabel"><b title={question.prompt}>{question.prompt}</b><span>{question.incorrect} / {question.answered} · {t('без ответа')} {question.unanswered}</span></div><div className="masteryTrack"><i className={question.accuracyPercent < 50 ? 'low' : question.accuracyPercent < 75 ? 'mid' : ''} style={{ width: `${question.accuracyPercent}%` }} /></div><strong>{question.accuracyPercent}%</strong></div>)}</div></div></section>}
           {assignments.map(a => <div className="assignmentGroup" key={a.id}><div className="assignmentRow">
-            <div className="assignmentIcon">▤</div><div className="assignmentMain"><b>{a.title}</b><p>{a.subject?.name || t('Без предмета')} · {a.questions?.length || 0} {t("вопросов ·")} {a._count?.submissions ?? 0} {t("попыток")}</p>
+            <div className="assignmentIcon">▤</div><div className="assignmentMain"><b>{a.title}</b><p>{a.subject?.name || t('Без предмета')} · {a.questions?.length || 0} {t("вопросов ·")} {a._count?.submissions ?? 0} {t("попыток")} · {a._count?.recipients ? `${t('Выбраны отдельные ученики')}: ${a._count.recipients}` : a.classId ? t('Весь класс') : t('Все ученики')}</p>
               {a.joinCode && <small className="roomCodeDisplay">{t('Код теста')}: <strong>{a.joinCode}</strong>{a.lobbyTarget ? ` · ${t('Лобби')} ${a.waitingCount ?? 0}/${a.lobbyTarget}` : ''}</small>}
             </div><span className={`status ${a.status !== 'PUBLISHED' ? 'pending' : ''}`}>{t(a.status === 'PUBLISHED' ? 'Опубликовано' : a.status === 'DRAFT' ? 'Черновик' : a.status)}</span>
             {a.lobbyTarget && a.status === 'PUBLISHED' && !a.roomStartedAt && <button type="button" className="primaryButton compact" disabled={busy || (a.waitingCount ?? 0) < a.lobbyTarget} onClick={() => launchRoom(a)}>{t('Запустить комнату')}</button>}
@@ -1054,12 +1063,12 @@ export default function Home() {
                 }
               }}><option value="">{t('Все классы')}</option>{schoolClasses.map((item: any) => <option value={item.id} key={item.id}>{item.name} · {item.academicYear}</option>)}</select><small>Выбранный класс увидит это задание. Если не выбирать класс, задание будет доступно всем ученикам без привязки к классу.</small></label>
               {assignmentClassId && <div className="assignmentStudentPicker">
-                <div className="assignmentStudentPickerHead"><b>Кому назначить</b><small>{assignmentStudentIds.length ? `Выбрано учеников: ${assignmentStudentIds.length}` : 'Если не выбирать учеников, задание получит весь класс.'}</small></div>
+                <div className="assignmentStudentPickerHead"><b>{t('Кому назначить')}</b><small>{assignmentStudentIds.length ? <>{t('Выбрано учеников')}: {assignmentStudentIds.length}</> : t('Если не выбирать учеников, задание получит весь класс.')}</small></div>
                 {assignmentRoster.length ? <div className="assignmentStudentRoster">{assignmentRoster.map((student: any) => <label className="assignmentStudentOption" key={student.id}>
                   <input type="checkbox" checked={assignmentStudentIds.includes(student.id)} onChange={event => setAssignmentStudentIds(current => event.target.checked ? [...current, student.id] : current.filter(id => id !== student.id))} />
                   <span>{student.user.lastName} {student.user.firstName}</span>
                   {student.studentNo && <small>{student.studentNo}</small>}
-                </label>)}</div> : <small>В выбранном классе нет активных учеников.</small>}
+                </label>)}</div> : <small>{t('В выбранном классе нет активных учеников.')}</small>}
               </div>}
               <label className="builderTitle">{t('Название задания')}<input value={title} onChange={e => setTitle(e.target.value)} required maxLength={200} placeholder={t("Например, Дроби: контрольная работа")} /></label>
             </div>
