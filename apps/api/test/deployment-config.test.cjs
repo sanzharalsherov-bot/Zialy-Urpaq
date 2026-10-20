@@ -126,6 +126,7 @@ test('plain HTTP is bound to localhost and never opened to the school LAN', () =
   assert.match(compose, /"127\.0\.0\.1:\$\{WEB_PORT:-8080\}:80"/u);
   assert.doesNotMatch(compose, /"0\.0\.0\.0:\$\{WEB_PORT:-8080\}:80"/u);
   assert.doesNotMatch(installer, /DisplayName = 'Zaily Urpaq School Platform'; Protocol = 'TCP'; LocalPort = 8080/u);
+  assert.match(installer, /Remove-NetFirewallRule -DisplayName 'Zaily Urpaq School Platform'/u);
   assert.match(installer, /http:\/\/127\.0\.0\.1:8080\/api\/health/u);
   assert.match(installer, /http:\/\/localhost:8080/u);
   assert.match(caddy, /:80\s*\{\s*import school_routes/u);
