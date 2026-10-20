@@ -68,7 +68,7 @@ jobs:
 
   windows-installer:
     name: Build Windows installer
-    if: github.event_name == 'workflow_dispatch' && inputs.build_installer == true
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.build_installer == true)
     runs-on: windows-latest
     steps:
       - name: Checkout
