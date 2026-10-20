@@ -839,7 +839,7 @@ export default function Home() {
           <button className={`navItem ${view === 'overview' ? 'active' : ''}`} onClick={() => setView('overview')}>▦ <span>{t('Обзор')}</span></button>
           <button className={`navItem ${view === 'assignments' || view === 'create' ? 'active' : ''}`} onClick={() => setView('assignments')}>▤ <span>{t('Тесты и задания')}</span></button>
           <button className={`navItem ${view === 'results' ? 'active' : ''}`} onClick={() => setView('results')}>▥ <span>{t('Результаты')}</span></button>
-          {user.role === 'ADMIN' && <button className={`navItem ${view === 'users' ? 'active' : ''}`} onClick={() => setView('users')}>♙ <span>{t("Аккаунты")}</span></button>}
+          {user.role === 'ADMIN' && <><button className={`navItem ${view === 'users' ? 'active' : ''}`} onClick={() => setView('users')}>♙ <span>{t("Аккаунты")}</span></button><button className={`navItem ${view === 'school' ? 'active' : ''}`} onClick={() => setView('school')}>⌂ <span>{t('Классы и ученики')}</span></button></>}
         </> : <button className={`navItem active`} onClick={() => { if (submission) exitTest(); else setView('student'); }}>▤ <span>{t('Мои задания')}</span></button>}
         <div className="sidebarBottom"><div className="avatar">ZU</div><div><b>{user.firstName || t(isStaff ? 'Преподаватель' : 'Ученик')}</b><small>{t(isStaff ? 'Управление школой' : 'Личный аккаунт ученика')}</small></div></div>
         <button className="logoutButton" disabled={busy} aria-label={t('Выйти из системы ↗')} onClick={logout}>{t('Выйти из системы ↗')}</button>
