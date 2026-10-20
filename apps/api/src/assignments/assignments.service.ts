@@ -373,7 +373,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       });
       if (active?.status === SubmissionStatus.WAITING) await tx.submission.update({ where: { id: active.id }, data: { lastSeenAt: now } });
       await tx.roomJoinAttempt.deleteMany({ where: { ipKey } });
-      await tx.auditLog.create({ data: { actorId: user.studentProfileId ? user.sub : null, action: 'ROOM_JOINED', entityType: 'AssignmentRoom', entityId: assignment.id, metadata: { waiting: submission.status === SubmissionStatus.WAITING }, ipAddress: ipKey } });
+      await tx.auditLog.create({ data: { actorId: user.kind === 'shared_student' ? null : user.sub, action: 'ROOM_JOINED', entityType: 'AssignmentRoom', entityId: assignment.id, metadata: { waiting: submission.status === SubmissionStatus.WAITING }, ipAddress: ipKey } });
       return { submission, waitingCount: submission.status === SubmissionStatus.WAITING
         ? await tx.submission.count({ where: { assignmentId: assignment.id, status: SubmissionStatus.WAITING, lastSeenAt: { gte: new Date(now.getTime() - ROOM_HEARTBEAT_TTL_MS) } } }) : undefined };
     });
