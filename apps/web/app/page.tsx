@@ -634,7 +634,7 @@ export default function Home() {
     }
     setBusy(true); setMessage('');
     try {
-      await request(`/submissions/${item.id}/grade`, { method: 'PATCH', body: JSON.stringify({ answers: values, feedback: submissionFeedback[item.id]?.trim() || (submissionFeedback[item.id] === '' ? '' : undefined) }) });
+      await request(`/submissions/${item.id}/grade`, { method: 'PATCH', body: JSON.stringify({ answers: values, feedback: submissionFeedback[item.id] !== undefined ? submissionFeedback[item.id].trim() : (item.feedback ?? undefined) }) });
       const updated = await request(`/assignments/${selectedResults.assignment.id}/results`);
       setSelectedResults(updated);
       setManualGrades(old => Object.fromEntries(Object.entries(old).filter(([id]) => !answerRows.some((answer: any) => answer.id === id))));
