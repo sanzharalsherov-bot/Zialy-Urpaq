@@ -74,10 +74,25 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     if (!Number.isInteger(input.lobbyTarget) || input.lobbyTarget < 1 || input.lobbyTarget > 40) throw new BadRequestException('В лобби можно указать от 1 до 40 учеников');
     if (input.durationMinutes !== undefined && (!Number.isInteger(input.durationMinutes) || input.durationMinutes < 1 || input.durationMinutes > 600)) throw new BadRequestException('Длительность должна быть от 1 до 600 минут');
     const assignment = await this.prisma.assignment.findFirst({
-      where: { id: assignmentId, ...this.staffScope(actor) }, select: { id: true, creatorId: true, status: true, timeLimitMinutes: true },
+      where: { id: assignmentId, ...this.staffScope(actor) },
+      select: {
+        id: true, creatorId: true, status: true, timeLimitMinutes: true,
+        questions: { select: { id: true, type: true, options: { select: { isCorrect: true } } } },
+      },
     });
     if (!assignment) throw new NotFoundException('Задание не найдено');
     if (assignment.status !== AssignmentStatus.PUBLISHED) throw new BadRequestException('Сначала опубликуйте задание');
+    if (!assignment.questions.length) throw new BadRequestException('В задании нет вопросов');
+    const unsupported = assignment.questions.find(question => question.type !== 'SINGLE_CHOICE' && question.type !== 'MULTIPLE_CHOICE');
+    if (unsupported) throw new BadRequestException('Комната поддерживает только вопросы с одним или несколькими вариантами ответа. Уберите текстовые и числовые вопросы из задания.');
+    for (const question of assignment.questions) {
+      if (!question.options.length || !question.options.some(option => option.isCorrect)) {
+        throw new BadRequestException('У каждого вопроса комнаты должен быть хотя бы один правильный вариант');
+      }
+      if (question.type === 'SINGLE_CHOICE' && question.options.filter(option => option.isCorrect).length !== 1) {
+        throw new BadRequestException('В вопросе с одним ответом должен быть ровно один правильный вариант');
+      }
+    }
     for (let attempt = 0; attempt < 8; attempt++) {
       const joinCode = String(randomInt(0, 1_000_000)).padStart(6, '0');
       try {
