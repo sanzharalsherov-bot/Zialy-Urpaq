@@ -50,6 +50,22 @@ test('Cloudflare configuration normalizes hostnames and replaces duplicate setti
   assert.match(content, /^CLOUDFLARE_TUNNEL_TOKEN="replacement-token-12345678901234567890="$/mu);
 });
 
+test('Cloudflare setup rejects DuckDNS domains before modifying the environment file', {
+  skip: process.platform !== 'win32' && 'Requires Windows PowerShell',
+}, t => {
+  const dir = mkdtempSync(join(tmpdir(), 'zaily-cloudflare-duckdns-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const envFile = join(dir, '.env');
+  const original = 'LIVEKIT_PUBLIC_URL="wss://192.168.1.25:8443/livekit"\\r\\nCLOUDFLARE_TUNNEL_TOKEN=""\\r\\n';
+  writeFileSync(envFile, original, 'utf8');
+  const script = resolve(__dirname, '../../../packaging/windows/Set-CloudflareSettings.ps1');
+  for (const hostname of ['zailyurpaq.duckdns.org', 'other.example.duckdns.org']) {
+    assert.throws(() => execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script,
+      '-EnvFile', envFile, '-Hostname', hostname, '-TunnelToken', 'opaque-test-token-12345678901234567890='], { stdio: 'pipe' }));
+    assert.equal(readFileSync(envFile, 'utf8'), original);
+  }
+});
+
 test('Cloudflare configuration rejects a malformed token without modifying the environment file', {
   skip: process.platform !== 'win32' && 'Requires Windows PowerShell',
 }, t => {

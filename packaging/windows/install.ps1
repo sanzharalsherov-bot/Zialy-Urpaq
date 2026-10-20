@@ -340,7 +340,8 @@ if (-not (Test-Path $setupComplete)) {
   if (-not [int]::TryParse($userCountText.Trim(), [ref]$existingUserCount)) { throw 'База вернула некорректный результат проверки аккаунтов.' }
 
   if ($existingUserCount -gt 0) {
-    Write-Host "В базе уже есть аккаунты ($existingUserCount). Сохраняю их без изменений." -ForegroundColor Yellow
+    Write-Host "В базе уже есть аккаунты ($existingUserCount). Сохраняю их без изменений; пароль из этой формы не применялся." -ForegroundColor Yellow
+    [Console]::Out.WriteLine('ADMIN_CREDENTIALS_NOT_CHANGED')
   } else {
     if ($password.Length -lt 12) { throw 'Пароль должен содержать не менее 12 символов. Повторно запустите установщик; запущенные данные сохранятся.' }
     if (-not $bootstrapKey) { throw 'Первый администратор ещё не создан, а ключ настройки уже отключён. Данные сохранены; обратитесь к администратору платформы.' }

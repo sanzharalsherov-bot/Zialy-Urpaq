@@ -41,9 +41,23 @@ internal static class InstallerApp
             RunStartupServer(Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "packaging\\windows\\Start-Server.ps1"));
             return;
         }
-        if (args.Length > 0 && String.Equals(args[0], "--cloudflare", StringComparison.OrdinalIgnoreCase))
+        if (args.Length > 0 && String.Equals(args[0], "--reset-admin", StringComparison.OrdinalIgnoreCase))
         {
-            Application.Run(new CloudflareForm(Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "packaging\\windows\\Configure-Cloudflare.ps1")));
+            if (!IsAdministrator())
+            {
+                try
+                {
+                    var start = new ProcessStartInfo(Application.ExecutablePath, "--reset-admin") { UseShellExecute = true, Verb = "runas" };
+                    Process.Start(start);
+                }
+                catch (System.ComponentModel.Win32Exception ex)
+                {
+                    if (ex.NativeErrorCode != 1223)
+                        MessageBox.Show("Для восстановления пароля нужны права администратора Windows.", "Zaily Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+                return;
+            }
+            Application.Run(new AdminRecoveryForm(Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "packaging\\windows\\Reset-Admin-Password.ps1")));
             return;
         }
 
@@ -503,7 +517,13 @@ internal sealed class InstallerForm : Form
             status.Text = "Платформа готова к работе";
             status.ForeColor = Color.FromArgb(35, 130, 85);
             string addressText = addresses.ToString().Trim();
-            hint.Text = (String.IsNullOrWhiteSpace(addressText) ? "Сайт откроется в браузере." : addressText) + (String.IsNullOrWhiteSpace(adminEmailUsed) ? "" : "\r\nВход администратора: " + adminEmailUsed) + (String.IsNullOrWhiteSpace(studentAccessCodeUsed) ? "" : "\r\nОбщий код учеников: " + studentAccessCodeUsed) + (String.IsNullOrWhiteSpace(launcherWarning) ? "" : "\r\n" + launcherWarning);
+            bool adminCredentialsUnchanged = diagnostics.ToString().Contains("ADMIN_CREDENTIALS_NOT_CHANGED");
+            hint.Text = (String.IsNullOrWhiteSpace(addressText) ? "Сайт откроется в браузере." : addressText)
+                + (adminCredentialsUnchanged
+                    ? "\r\nСуществующие аккаунты сохранены. Пароль из этой формы не применялся. Используйте ярлык восстановления пароля администратора."
+                    : (String.IsNullOrWhiteSpace(adminEmailUsed) ? "" : "\r\nВход администратора: " + adminEmailUsed)
+                      + (String.IsNullOrWhiteSpace(studentAccessCodeUsed) ? "" : "\r\nОбщий код учеников: " + studentAccessCodeUsed))
+                + (String.IsNullOrWhiteSpace(launcherWarning) ? "" : "\r\n" + launcherWarning);
             hint.Height = 72;
             hint.ForeColor = Color.FromArgb(35, 130, 85);
             installButton.Text = "Закрыть";
@@ -547,7 +567,11 @@ internal sealed class InstallerForm : Form
         if (shellType == null) throw new InvalidOperationException("Не удалось создать ярлык Windows.");
         dynamic shell = Activator.CreateInstance(shellType);
         if (createDesktopShortcut.Checked)
-            CreateShortcut(shell, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Zaily Urpaq.lnk"), installedExe, "--launch", installationPath);
+        {
+            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            CreateShortcut(shell, Path.Combine(desktop, "Zaily Urpaq.lnk"), installedExe, "--launch", installationPath);
+            CreateShortcut(shell, Path.Combine(desktop, "Zaily Urpaq - Восстановление пароля администратора.lnk"), installedExe, "--reset-admin", installationPath);
+        }
         CreateShortcut(shell, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), "Zaily Urpaq Server.lnk"), installedExe, "--start-server", installationPath);
         Marshal.FinalReleaseComObject(shell);
     }
@@ -683,6 +707,13 @@ internal sealed class CloudflareForm : Form
     private void ConnectTunnel(object sender, EventArgs e)
     {
         if (String.IsNullOrWhiteSpace(hostname.Text)) { MessageBox.Show(this, "Введите Public Hostname из Cloudflare, например tests.school.kz.", "Нужен адрес школы", MessageBoxButtons.OK, MessageBoxIcon.Information); hostname.Focus(); return; }
+        string requestedHostname = hostname.Text.Trim().TrimEnd('.');
+        if (requestedHostname.EndsWith(".duckdns.org", StringComparison.OrdinalIgnoreCase) || String.Equals(requestedHostname, "duckdns.org", StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show(this, "zailyurpaq.duckdns.org — это домен DuckDNS, а не зона, управляемая Cloudflare. Cloudflare Tunnel не сможет использовать его как Public Hostname. Закройте это окно; мы оставим бесплатный DuckDNS для отдельной настройки.", "Неподдерживаемый домен", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            hostname.Focus();
+            return;
+        }
         if (String.IsNullOrWhiteSpace(token.Text)) { MessageBox.Show(this, "Вставьте Tunnel Token из Cloudflare.", "Нужен токен", MessageBoxButtons.OK, MessageBoxIcon.Information); token.Focus(); return; }
         if (!File.Exists(script)) { MessageBox.Show(this, "Не найден компонент настройки Cloudflare. Переустановите платформу.", "Zaily Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
         try
@@ -748,6 +779,177 @@ internal sealed class CloudflareForm : Form
     }
 
     private sealed class CloudflareConfig { public string token { get; set; } public string hostname { get; set; } }
+}
+
+internal sealed class AdminRecoveryForm : Form
+{
+    private readonly TextBox email = new TextBox();
+    private readonly TextBox password = new TextBox();
+    private readonly TextBox confirmPassword = new TextBox();
+    private readonly Label status = new Label();
+    private readonly Button reset = new Button();
+    private readonly Button details = new Button();
+    private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
+    private readonly StringBuilder output = new StringBuilder();
+    private readonly string script;
+    private Process process;
+
+    public AdminRecoveryForm(string scriptPath)
+    {
+        script = scriptPath;
+        Text = "Восстановление администратора — Zaily Urpaq";
+        StartPosition = FormStartPosition.CenterScreen;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ClientSize = new Size(570, 390);
+        BackColor = Color.White;
+        Font = new Font("Segoe UI", 9.5f);
+
+        Controls.Add(new Label { Text = "Восстановление доступа администратора", Font = new Font("Segoe UI", 15, FontStyle.Bold), ForeColor = Color.FromArgb(39, 27, 49), AutoSize = true, Location = new Point(24, 20) });
+        Controls.Add(new Label {
+            Text = "Изменится только пароль существующего активного аккаунта ADMIN с указанным email.\r\nУченики, задания, оценки и базы данных не удаляются.",
+            ForeColor = Color.FromArgb(124, 113, 132), AutoSize = false, Bounds = new Rectangle(26, 58, 520, 42)
+        });
+        Controls.Add(new Label { Text = "Email администратора", ForeColor = Color.FromArgb(124, 113, 132), AutoSize = true, Location = new Point(26, 108) });
+        email.Bounds = new Rectangle(26, 130, 520, 30);
+        email.Font = new Font("Segoe UI", 10);
+        Controls.Add(email);
+        Controls.Add(new Label { Text = "Новый пароль (не менее 12 символов)", ForeColor = Color.FromArgb(124, 113, 132), AutoSize = true, Location = new Point(26, 168) });
+        password.Bounds = new Rectangle(26, 190, 520, 30);
+        password.UseSystemPasswordChar = true;
+        password.Font = new Font("Segoe UI", 10);
+        Controls.Add(password);
+        Controls.Add(new Label { Text = "Повторите новый пароль", ForeColor = Color.FromArgb(124, 113, 132), AutoSize = true, Location = new Point(26, 228) });
+        confirmPassword.Bounds = new Rectangle(26, 250, 520, 30);
+        confirmPassword.UseSystemPasswordChar = true;
+        confirmPassword.Font = new Font("Segoe UI", 10);
+        Controls.Add(confirmPassword);
+
+        status.Text = "Работает только на этом компьютере-сервере.";
+        status.ForeColor = Color.FromArgb(124, 113, 132);
+        status.AutoSize = false;
+        status.Bounds = new Rectangle(26, 292, 520, 40);
+        Controls.Add(status);
+
+        details.Text = "Показать сведения";
+        details.Bounds = new Rectangle(26, 346, 155, 30);
+        details.FlatStyle = FlatStyle.Flat;
+        details.Visible = false;
+        details.Click += delegate {
+            string text;
+            lock (output) { text = output.ToString().Trim(); }
+            if (String.IsNullOrWhiteSpace(text)) text = "Дополнительных сведений нет.";
+            MessageBox.Show(this, text, "Сведения о восстановлении", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        };
+        Controls.Add(details);
+
+        reset.Text = "Изменить пароль";
+        reset.Bounds = new Rectangle(376, 344, 170, 34);
+        reset.BackColor = Color.FromArgb(91, 22, 107);
+        reset.ForeColor = Color.White;
+        reset.FlatStyle = FlatStyle.Flat;
+        reset.Click += ResetPassword;
+        Controls.Add(reset);
+        AcceptButton = reset;
+        timer.Interval = 250;
+        timer.Tick += CheckProcess;
+        FormClosing += delegate(object sender, FormClosingEventArgs e) {
+            if (process != null && !process.HasExited) {
+                e.Cancel = true;
+                MessageBox.Show(this, "Дождитесь завершения проверки. Не выключайте Docker во время восстановления.", "Операция выполняется", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        };
+    }
+
+    private void ResetPassword(object sender, EventArgs e)
+    {
+        if (process != null && !process.HasExited) return;
+        if (String.IsNullOrWhiteSpace(email.Text)) { MessageBox.Show(this, "Введите email администратора.", "Нужен email", MessageBoxButtons.OK, MessageBoxIcon.Information); email.Focus(); return; }
+        try { new System.Net.Mail.MailAddress(email.Text.Trim()); }
+        catch { MessageBox.Show(this, "Введите корректный email администратора.", "Неверный email", MessageBoxButtons.OK, MessageBoxIcon.Information); email.Focus(); return; }
+        if (password.Text.Length < 12) { MessageBox.Show(this, "Пароль должен содержать не менее 12 символов.", "Слишком короткий пароль", MessageBoxButtons.OK, MessageBoxIcon.Information); password.Focus(); return; }
+        if (Encoding.UTF8.GetByteCount(password.Text) > 72) { MessageBox.Show(this, "Пароль слишком длинный в UTF-8. Допустимо не более 72 байт.", "Слишком длинный пароль", MessageBoxButtons.OK, MessageBoxIcon.Information); password.Focus(); return; }
+        if (!String.Equals(password.Text, confirmPassword.Text, StringComparison.Ordinal)) { MessageBox.Show(this, "Пароли не совпадают.", "Проверьте пароль", MessageBoxButtons.OK, MessageBoxIcon.Information); confirmPassword.Focus(); return; }
+        if (!File.Exists(script)) { MessageBox.Show(this, "Файл восстановления не найден. Запустите обновлённый установщик Zaily Urpaq.", "Компонент отсутствует", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+
+        try
+        {
+            lock (output) { output.Length = 0; }
+            var start = InstallerApp.CreateHiddenPowerShell(script);
+            start.RedirectStandardInput = true;
+            start.RedirectStandardOutput = true;
+            start.RedirectStandardError = true;
+            process = new Process { StartInfo = start };
+            process.OutputDataReceived += CaptureOutput;
+            process.ErrorDataReceived += CaptureOutput;
+            if (!process.Start()) throw new InvalidOperationException("Не удалось запустить восстановление.");
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            var config = new JavaScriptSerializer().Serialize(new AdminResetConfig { email = email.Text.Trim(), password = password.Text });
+            process.StandardInput.Write(Convert.ToBase64String(Encoding.UTF8.GetBytes(config)));
+            process.StandardInput.Close();
+            password.Clear();
+            confirmPassword.Clear();
+            email.Enabled = false;
+            password.Enabled = false;
+            confirmPassword.Enabled = false;
+            reset.Enabled = false;
+            details.Visible = false;
+            status.Text = "Проверяю установку и обновляю пароль…";
+            status.ForeColor = Color.FromArgb(124, 113, 132);
+            timer.Start();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Не удалось запустить восстановление.\r\n" + ex.Message, "Zaily Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (process != null) { process.Dispose(); process = null; }
+            email.Enabled = true; password.Enabled = true; confirmPassword.Enabled = true; reset.Enabled = true;
+        }
+    }
+
+    private void CaptureOutput(object sender, DataReceivedEventArgs e)
+    {
+        if (String.IsNullOrWhiteSpace(e.Data)) return;
+        lock (output) { if (output.Length < 8000) output.AppendLine(e.Data); }
+    }
+
+    private void CheckProcess(object sender, EventArgs e)
+    {
+        if (process == null || !process.HasExited) return;
+        process.WaitForExit();
+        int exitCode = process.ExitCode;
+        process.Dispose();
+        process = null;
+        timer.Stop();
+        email.Enabled = true;
+        password.Enabled = true;
+        confirmPassword.Enabled = true;
+        reset.Enabled = true;
+        reset.Text = "Повторить";
+        string result;
+        lock (output) { result = output.ToString(); }
+        if (exitCode == 0 && result.Contains("ADMIN_PASSWORD_RESET_OK"))
+        {
+            status.Text = "Пароль обновлён. Войдите с указанным email и новым паролем.";
+            status.ForeColor = Color.FromArgb(35, 130, 85);
+            reset.Text = "Готово";
+            reset.Enabled = false;
+            MessageBox.Show(this, "Пароль администратора изменён. Данные школы сохранены.", "Готово", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        else
+        {
+            status.Text = "Не удалось изменить пароль. Нажмите «Показать сведения».";
+            status.ForeColor = Color.Firebrick;
+            details.Visible = true;
+        }
+    }
+
+    private sealed class AdminResetConfig
+    {
+        public string email { get; set; }
+        public string password { get; set; }
+    }
 }
 
 internal sealed class LaunchForm : Form
