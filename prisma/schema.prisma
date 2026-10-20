@@ -98,6 +98,7 @@ model StudentProfile {
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   schoolClass SchoolClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
   submissions Submission[]
+  assignmentTargets AssignmentRecipient[]
 }
 
 model TeacherProfile {
@@ -151,9 +152,21 @@ model Assignment {
   questions        Question[]
   submissions      Submission[]
   testRooms        TestRoom[]
+  recipients       AssignmentRecipient[]
 
   @@index([status, dueAt])
   @@index([creatorId])
+}
+
+model AssignmentRecipient {
+  assignmentId String
+  studentId    String
+  assignedAt   DateTime         @default(now())
+  assignment   Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student      StudentProfile   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@id([assignmentId, studentId])
+  @@index([studentId, assignmentId])
 }
 
 model Question {
