@@ -46,6 +46,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolcrm_test
       TEST_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolcrm_test
+      TEST_RESULTS_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolresults_test
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - name: Checkout
@@ -77,6 +78,19 @@ jobs:
         run: npx prisma generate --schema prisma/schema.prisma
       - name: Apply database migrations
         run: npx prisma migrate deploy --schema prisma/schema.prisma
+      - name: Prepare isolated results database for integration and recovery tests
+        run: |
+          docker run --rm --network host \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -e TEST_DATABASE_URL -e TEST_RESULTS_DATABASE_URL \
+            postgres:17-alpine sh -ec '
+              if ! psql "$TEST_DATABASE_URL" -Atqc "SELECT 1 FROM pg_database WHERE datname = '''schoolresults_test'''" | grep -qx 1; then
+                psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE schoolresults_test"
+              fi
+              psql "$TEST_RESULTS_DATABASE_URL" -v ON_ERROR_STOP=1 -f /workspace/prisma/results-database/init/001-results.sql
+            '
+      - name: Verify isolated dual-database backup and restore
+        run: node apps/api/test/qa-postgres-recovery-ci.mjs
       - name: Run tests
         run: npm test
       - name: Build production applications
