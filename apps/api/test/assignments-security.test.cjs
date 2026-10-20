@@ -32,7 +32,7 @@ test('student cannot call staff operations, and only admin may delete', async ()
   const { service } = serviceWith({});
   for (const operation of [() => service.listForStaff(student), () => service.dashboard(student),
     () => service.create({}, student), () => service.publish('a1', student), () => service.results('a1', student),
-    () => service.grade('s1', { answers: [] }, student), () => service.delete('a1', student), () => service.delete('a1', teacher),
+    () => service.grade('s1', { answers: [] }, student), () => service.listStudentResults(admin), () => service.delete('a1', student), () => service.delete('a1', teacher),
     () => service.start('a1', teacher), () => service.listAvailable(admin)]) {
     await assert.rejects(operation, rejectedStatus(403));
   }
