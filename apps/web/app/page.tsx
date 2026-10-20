@@ -266,14 +266,14 @@ export default function Home() {
           const list = await request('/student/assignments');
           if (!cancelled) setAvailable(list);
         } else {
-          const [stats, list, userList] = await Promise.all([
-            request('/dashboard'), request('/assignments'), user.role === 'ADMIN' ? request('/auth/users') : Promise.resolve(null),
+          const [stats, list, userList, classes] = await Promise.all([
+            request('/dashboard'), request('/assignments'), user.role === 'ADMIN' ? request('/auth/users') : Promise.resolve(null), request('/school/classes'),
           ]);
-          if (!cancelled) { setDashboard(stats); setAssignments(list); if (userList) setAccounts(userList); }
+          if (!cancelled) { setDashboard(stats); setAssignments(list); setSchoolClasses(classes); if (userList) setAccounts(userList); if (!newStudentClassId && classes.length) setNewStudentClassId(classes[0].id); }
           if (!cancelled) await loadTestRooms(list);
           if (user.role === 'ADMIN') {
-            const codeStatus = await request('/auth/student-access-code');
-            if (!cancelled) setStudentAccessCodeConfigured(codeStatus.configured);
+            const [codeStatus, students] = await Promise.all([request('/auth/student-access-code'), request('/school/students')]);
+            if (!cancelled) { setStudentAccessCodeConfigured(codeStatus.configured); setSchoolStudents(students); }
           }
         }
       } catch (error) {
