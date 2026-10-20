@@ -1,4 +1,4 @@
-# Local-only administrator password recovery. The password is sent to Docker over stdin,
+﻿# Local-only administrator password recovery. The password is sent to Docker over stdin,
 # never passed as a command-line argument and never written to logs or .env.
 $ErrorActionPreference = 'Stop'
 
