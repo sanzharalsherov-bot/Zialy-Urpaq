@@ -101,9 +101,10 @@ try {
   $stdout = $process.StandardOutput.ReadToEnd()
   $stderr = $process.StandardError.ReadToEnd()
   $process.WaitForExit()
+  $processExitCode = $process.ExitCode
 } finally { $process.Dispose() }
 
-if ($process.ExitCode -ne 0) {
+if ($processExitCode -ne 0) {
   if ($stderr -match 'ADMIN_ACCOUNT_NOT_FOUND') {
     throw 'Для введённого email не найдена активная учётная запись администратора. Пароль не изменён. Проверьте email, который использовался при первой установке.'
   }
