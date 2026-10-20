@@ -382,7 +382,7 @@ export default function Home() {
       if (questions.some(q => q.type === 'NUMERIC' && (!Number.isFinite(q.correctValue) || Math.abs(q.correctValue) > 9999999999.9999 || Math.abs(q.correctValue * 10000 - Math.round(q.correctValue * 10000)) > 1e-7 || !Number.isFinite(q.tolerance) || q.tolerance < 0))) throw new Error('Проверьте правильный числовой ответ и допустимую погрешность');
       if (availableFrom && dueAt && new Date(dueAt).getTime() <= new Date(availableFrom).getTime()) throw new Error('Срок сдачи должен быть позже даты открытия задания');
       const payload = {
-        title: title.trim(), subjectName: subjectName.trim(), description: description.trim() || undefined,
+        title: title.trim(), subjectName: subjectName.trim(), description: description.trim() || undefined, classId: assignmentClassId || undefined,
         timeLimitMinutes: timeLimit ? Number(timeLimit) : undefined,
         availableFrom: availableFrom ? new Date(availableFrom).toISOString() : undefined,
         dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
@@ -400,7 +400,7 @@ export default function Home() {
       };
       const created = await request('/assignments', { method: 'POST', body: JSON.stringify(payload) });
       createdId = created.id;
-      setTitle(''); setSubjectName(''); setDescription(''); setTimeLimit(''); setAvailableFrom(''); setDueAt(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setQuestions([newQuestion()]);
+      setTitle(''); setSubjectName(''); setDescription(''); setAssignmentClassId(''); setTimeLimit(''); setAvailableFrom(''); setDueAt(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setQuestions([newQuestion()]);
       setAssignments(old => [created, ...old]); setView('assignments');
       await request(`/assignments/${created.id}/publish`, { method: 'PATCH' });
       createdId = null;
@@ -969,6 +969,7 @@ export default function Home() {
             </div>
             <div className="builderBasics">
               <label className="builderSubject">{t('Предмет')}<input value={subjectName} onChange={e => setSubjectName(e.target.value)} required maxLength={120} placeholder={t("Например, Математика")} /></label>
+              <label>{t('Класс')}<select value={assignmentClassId} onChange={e => setAssignmentClassId(e.target.value)}><option value="">{t('Все классы')}</option>{schoolClasses.map((item: any) => <option value={item.id} key={item.id}>{item.name} · {item.academicYear}</option>)}</select><small>Выбранный класс увидит это задание. Если не выбирать класс, задание будет доступно всем ученикам без привязки к классу.</small></label>
               <label className="builderTitle">{t('Название задания')}<input value={title} onChange={e => setTitle(e.target.value)} required maxLength={200} placeholder={t("Например, Дроби: контрольная работа")} /></label>
             </div>
             <div className="builderSectionHeading"><span>{t("Вопросы")}</span><small>{t("Сформулируйте вопрос, выберите тип ответа и укажите баллы.")}</small></div>
