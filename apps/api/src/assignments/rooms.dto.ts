@@ -13,6 +13,9 @@ export class JoinRoomV2Dto {
   @IsString() @Matches(/^\d{6}$/u)
   code!: string;
 
+  @IsString() @Matches(/^[A-Za-z0-9_-]{32,80}$/u)
+  deviceId!: string;
+
   @IsString() @MinLength(1) @MaxLength(100) @Matches(/\S/u)
   firstName!: string;
 
