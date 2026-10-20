@@ -277,6 +277,33 @@ test('concurrent duplicate submit becomes idempotent after the row lock', async 
   assert.equal(db.submissions[0].status, 'GRADED');
 });
 
+test('room mutations acquire room lock before submission lock', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+  db.room.status = 'RUNNING'; db.room.startedAt = new Date(); db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+  const originalQuery = db.$queryRaw;
+  let statements = [];
+  db.$queryRaw = async (strings, ...values) => {
+    statements.push(strings.join('?'));
+    return originalQuery(strings, ...values);
+  };
+  const assertLockOrder = () => {
+    const roomLock = statements.findIndex(query => query.includes('FROM "TestRoom"') && query.includes('FOR UPDATE'));
+    const submissionLock = statements.findIndex(query => query.includes('FROM "Submission"') && query.includes('FOR UPDATE'));
+    assert.ok(roomLock >= 0, 'room row must be locked');
+    assert.ok(submissionLock > roomLock, 'room lock must precede submission lock');
+  };
+  await service.saveRoomAnswers('room-join', joined.sessionToken, { answers: [{ questionId: 'q1', value: 'a' }] });
+  assertLockOrder();
+  statements = [];
+  await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'VISIBILITY_HIDDEN' });
+  assertLockOrder();
+  statements = [];
+  await service.submitRoom('room-join', joined.sessionToken);
+  assertLockOrder();
+});
+
 test('room submission after deadline is recorded as TIME_LIMIT', async () => {
   const db = fakeJoinPrisma(); const service = new RoomsService(db);
   const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
