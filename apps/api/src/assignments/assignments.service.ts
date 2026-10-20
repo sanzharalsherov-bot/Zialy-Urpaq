@@ -490,74 +490,85 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
   private async finalize(id: string, submissionId: string, dto: SubmitAnswersDto, user?: AuthenticatedUser, finishReason?: string) {
     return this.prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
-      const submission = await tx.submission.findFirst({
-        where: {
-          id: submissionId, assignmentId: id,
-          ...(user ? { studentId: user.studentProfileId ?? null, studentIdentityKey: this.studentIdentityKey(user) } : {}), status: SubmissionStatus.IN_PROGRESS,
-        },
-        include: { assignment: { include: { questions: { include: { options: true } } } }, answers: true },
-      });
-      if (!submission) throw new NotFoundException('Активная попытка не найдена');
-      const elapsedMs = Date.now() - submission.startedAt.getTime();
-      const timedOut = (submission.assignment.timeLimitMinutes !== null &&
-        elapsedMs >= submission.assignment.timeLimitMinutes * 60_000) ||
-        (submission.assignment.dueAt !== null && submission.assignment.dueAt.getTime() < Date.now());
-      if (!user && !timedOut) throw new BadRequestException('Срок попытки ещё не истёк');
-      const questionMap = new Map(submission.assignment.questions.map(q => [q.id, q]));
-      const submittedAnswers = timedOut ? submission.answers.map(answer => ({
-        questionId: answer.questionId, textValue: answer.textValue ?? undefined,
-        numericValue: answer.numericValue === null ? undefined : Number(answer.numericValue),
-        jsonValue: answer.jsonValue ?? undefined,
-      })) : dto.answers;
-      const inputMap = new Map(submittedAnswers.map(a => [a.questionId, a]));
-      if (inputMap.size !== submittedAnswers.length) throw new BadRequestException('Нельзя отправить несколько ответов на один вопрос');
-      for (const answer of submittedAnswers) {
-        if (!questionMap.has(answer.questionId)) throw new BadRequestException('Ответ содержит неизвестный вопрос');
-      }
-
-      let autoScore = 0;
-      let allAuto = true;
-      const answerRows = submission.assignment.questions.map(question => {
-        const input = inputMap.get(question.id);
-        this.validateAnswer(question, input);
-        let isCorrect: boolean | null = null;
-        let awardedPoints: number | null = null;
-        if (AUTO_GRADED.has(question.type)) {
-          const points = Number(question.points);
-          isCorrect = this.isCorrect(question.type, question.options, question.config, input);
-          awardedPoints = isCorrect ? points : 0;
-          autoScore += awardedPoints;
-        } else {
-          allAuto = false;
-        }
-        return {
-          questionId: question.id,
-          textValue: input?.textValue ?? null,
-          numericValue: input?.numericValue ?? null,
-          jsonValue: input?.jsonValue as Prisma.InputJsonValue | undefined,
-          isCorrect,
-          awardedPoints,
-        };
-      });
-      await tx.answer.deleteMany({ where: { submissionId: submission.id } });
-      await tx.answer.createMany({ data: answerRows.map(row => ({ ...row, submissionId: submission.id })) });
-      const saved = await tx.submission.update({
-        where: { id: submission.id },
-        data: {
-          status: timedOut ? SubmissionStatus.EXPIRED : allAuto ? SubmissionStatus.GRADED : SubmissionStatus.UNDER_REVIEW,
-          submittedAt: timedOut ? new Date(Math.min(
-            submission.assignment.timeLimitMinutes !== null ? submission.startedAt.getTime() + submission.assignment.timeLimitMinutes * 60000 : Infinity,
-            submission.assignment.dueAt?.getTime() ?? Infinity,
-          )) : new Date(),
-          totalScore: allAuto ? roundedScore(autoScore) : null,
-          gradedAt: allAuto ? new Date() : null,
-          finishReason: finishReason ?? (timedOut ? 'TIME_LIMIT' : 'STUDENT_SUBMITTED'),
-        },
-        select: { id: true, status: true, submittedAt: true, totalScore: true, attemptNo: true },
-      });
-      await enqueueResultExport(tx, submission.id);
-      return { ...saved, timedOut, message: timedOut ? 'Время вышло. Ответы сохранены, но попытка отмечена как просроченная.' : allAuto ? 'Ответы проверены автоматически.' : 'Ответы отправлены преподавателю на проверку.' };
+      return this.finalizeInTransaction(tx, id, submissionId, dto, user, finishReason);
     });
+  }
+
+  private async finalizeInTransaction(
+    tx: Prisma.TransactionClient,
+    id: string,
+    submissionId: string,
+    dto: SubmitAnswersDto,
+    user?: AuthenticatedUser,
+    finishReason?: string,
+  ) {
+    const submission = await tx.submission.findFirst({
+      where: {
+        id: submissionId, assignmentId: id,
+        ...(user ? { studentId: user.studentProfileId ?? null, studentIdentityKey: this.studentIdentityKey(user) } : {}), status: SubmissionStatus.IN_PROGRESS,
+      },
+      include: { assignment: { include: { questions: { include: { options: true } } } }, answers: true },
+    });
+    if (!submission) throw new NotFoundException('Активная попытка не найдена');
+    const elapsedMs = Date.now() - submission.startedAt.getTime();
+    const timedOut = (submission.assignment.timeLimitMinutes !== null &&
+      elapsedMs >= submission.assignment.timeLimitMinutes * 60_000) ||
+      (submission.assignment.dueAt !== null && submission.assignment.dueAt.getTime() < Date.now());
+    if (!user && !timedOut) throw new BadRequestException('Срок попытки ещё не истёк');
+    const questionMap = new Map(submission.assignment.questions.map(q => [q.id, q]));
+    const submittedAnswers = timedOut ? submission.answers.map(answer => ({
+      questionId: answer.questionId, textValue: answer.textValue ?? undefined,
+      numericValue: answer.numericValue === null ? undefined : Number(answer.numericValue),
+      jsonValue: answer.jsonValue ?? undefined,
+    })) : dto.answers;
+    const inputMap = new Map(submittedAnswers.map(a => [a.questionId, a]));
+    if (inputMap.size !== submittedAnswers.length) throw new BadRequestException('Нельзя отправить несколько ответов на один вопрос');
+    for (const answer of submittedAnswers) {
+      if (!questionMap.has(answer.questionId)) throw new BadRequestException('Ответ содержит неизвестный вопрос');
+    }
+
+    let autoScore = 0;
+    let allAuto = true;
+    const answerRows = submission.assignment.questions.map(question => {
+      const input = inputMap.get(question.id);
+      this.validateAnswer(question, input);
+      let isCorrect: boolean | null = null;
+      let awardedPoints: number | null = null;
+      if (AUTO_GRADED.has(question.type)) {
+        const points = Number(question.points);
+        isCorrect = this.isCorrect(question.type, question.options, question.config, input);
+        awardedPoints = isCorrect ? points : 0;
+        autoScore += awardedPoints;
+      } else {
+        allAuto = false;
+      }
+      return {
+        questionId: question.id,
+        textValue: input?.textValue ?? null,
+        numericValue: input?.numericValue ?? null,
+        jsonValue: input?.jsonValue as Prisma.InputJsonValue | undefined,
+        isCorrect,
+        awardedPoints,
+      };
+    });
+    await tx.answer.deleteMany({ where: { submissionId: submission.id } });
+    await tx.answer.createMany({ data: answerRows.map(row => ({ ...row, submissionId: submission.id })) });
+    const saved = await tx.submission.update({
+      where: { id: submission.id },
+      data: {
+        status: timedOut ? SubmissionStatus.EXPIRED : allAuto ? SubmissionStatus.GRADED : SubmissionStatus.UNDER_REVIEW,
+        submittedAt: timedOut ? new Date(Math.min(
+          submission.assignment.timeLimitMinutes !== null ? submission.startedAt.getTime() + submission.assignment.timeLimitMinutes * 60000 : Infinity,
+          submission.assignment.dueAt?.getTime() ?? Infinity,
+        )) : new Date(),
+        totalScore: allAuto ? roundedScore(autoScore) : null,
+        gradedAt: allAuto ? new Date() : null,
+        finishReason: finishReason ?? (timedOut ? 'TIME_LIMIT' : 'STUDENT_SUBMITTED'),
+      },
+      select: { id: true, status: true, submittedAt: true, totalScore: true, attemptNo: true },
+    });
+    await enqueueResultExport(tx, submission.id);
+    return { ...saved, timedOut, message: timedOut ? 'Время вышло. Ответы сохранены, но попытка отмечена как просроченная.' : allAuto ? 'Ответы проверены автоматически.' : 'Ответы отправлены преподавателю на проверку.' };
   }
 
   async studentResult(submissionId: string, user: AuthenticatedUser) {
