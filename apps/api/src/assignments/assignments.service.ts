@@ -171,6 +171,9 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
     this.requireStaff(user);
     const subjectName = dto.subjectName.trim();
     if (!subjectName || !dto.title.trim()) throw new BadRequestException('Введите предмет и название задания');
+    const availableFrom = dto.availableFrom ? new Date(dto.availableFrom) : null;
+    const dueAt = dto.dueAt ? new Date(dto.dueAt) : null;
+    if (availableFrom && dueAt && dueAt <= availableFrom) throw new BadRequestException('Срок сдачи должен быть позже даты открытия задания');
     const questions = dto.questions.map((q, position) => {
       if (!AUTO_GRADED.has(q.type) && !TEXT_QUESTIONS.has(q.type)) throw new BadRequestException('Этот тип вопроса пока не поддерживается');
       if (!q.prompt.trim() || q.options?.some(o => !o.text.trim())) throw new BadRequestException('Текст вопроса и вариантов не может быть пустым');
@@ -233,6 +236,8 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
           subjectId: subject.id,
           classId: dto.classId || null,
           timeLimitMinutes: dto.timeLimitMinutes ?? null,
+          availableFrom,
+          dueAt,
           maxAttempts: dto.maxAttempts ?? 1,
           joinCode: randomBytes(6).toString('hex').toUpperCase(),
           lobbyTarget: dto.lobbyTarget ?? null,
