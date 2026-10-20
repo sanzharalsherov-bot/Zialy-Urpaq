@@ -47,6 +47,9 @@ export function StudentRoomV2({ language, firstName, lastName }: { language: Lan
   const [loadingSession, setLoadingSession] = useState(true);
   const [onlineRetry, setOnlineRetry] = useState(0);
   const lastAutosaved = useRef('{}');
+  const answersRef = useRef<AnswerState>({});
+  const saveInFlight = useRef(false);
+  answersRef.current = answers;
 
   const token = useCallback((roomId: string) => readRoomSession(window.localStorage, roomId), []);
   const refresh = useCallback(async (roomId: string, bearer: string) => {
@@ -131,12 +134,28 @@ export function StudentRoomV2({ language, firstName, lastName }: { language: Lan
     if (serialized === lastAutosaved.current) return;
     try { window.localStorage.setItem(draftKey(roomId), serialized); } catch { /* Keep the draft in memory when browser storage is unavailable. */ }
     const timer = window.setTimeout(async () => {
+      // Never let an older debounced snapshot overwrite a newer answer or race another save.
+      if (JSON.stringify(answersRef.current) !== serialized) { setOnlineRetry(value => value + 1); return; }
+      if (saveInFlight.current) return;
+      let previous: AnswerState = {};
+      try { previous = JSON.parse(lastAutosaved.current); } catch { /* Treat a damaged snapshot as unsaved. */ }
+      const changedAnswers = Object.entries(answers).filter(([questionId, value]) => JSON.stringify(previous[questionId]) !== JSON.stringify(value));
+      if (!changedAnswers.length) {
+        lastAutosaved.current = serialized;
+        try { if (window.localStorage.getItem(draftKey(roomId)) === serialized) window.localStorage.removeItem(draftKey(roomId)); } catch { /* Ignore unavailable storage. */ }
+        return;
+      }
+      saveInFlight.current = true;
       try {
-        const saved = await requestJson(apiUrl, `/student/rooms/${roomId}/v2/answers`, sessionToken, { method: 'PATCH', body: JSON.stringify({ answers: Object.entries(answers).map(([questionId, value]) => ({ questionId, value })) }) });
+        const saved = await requestJson(apiUrl, `/student/rooms/${roomId}/v2/answers`, sessionToken, { method: 'PATCH', body: JSON.stringify({ answers: changedAnswers.map(([questionId, value]) => ({ questionId, value })) }) });
         lastAutosaved.current = serialized;
         try { if (window.localStorage.getItem(draftKey(roomId)) === serialized) window.localStorage.removeItem(draftKey(roomId)); } catch { /* Server copy is already safe. */ }
         setMessage(saved.finished ? t('Тест завершён') : t('Ответ сохранён'));
       } catch { setMessage(t('Нет связи. Повторяем сохранение…')); }
+      finally {
+        saveInFlight.current = false;
+        if (JSON.stringify(answersRef.current) !== serialized) setOnlineRetry(value => value + 1);
+      }
     }, 700);
     return () => window.clearTimeout(timer);
   }, [answers, roomId, sessionToken, status, onlineRetry]);
