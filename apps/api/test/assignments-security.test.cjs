@@ -73,6 +73,48 @@ test('student cannot call staff operations, and only admin may delete', async ()
   }
 });
 
+test('individual assignment visibility is limited to the selected student profile', async () => {
+  let captured;
+  const assignedStudent = { ...student, studentProfileId: 'profile-a' };
+  const { service } = serviceWith({
+    studentProfile: { findUnique: async ({ where }) => {
+      assert.equal(where.id, 'profile-a');
+      return { id: 'profile-a', classId: 'class-a' };
+    } },
+    assignment: { findMany: async args => { captured = args.where; return []; } },
+  });
+  await service.listAvailable(assignedStudent);
+  assert.ok(captured.OR.some(scope => scope.classId === null && scope.recipients?.none));
+  assert.ok(captured.OR.some(scope => scope.classId === 'class-a' && scope.recipients?.none));
+  assert.ok(captured.OR.some(scope => scope.classId === 'class-a' && scope.recipients?.some?.studentId === 'profile-a'));
+  assert.equal(captured.OR.some(scope => scope.classId === 'class-b'), false);
+});
+
+test('assignment creation rejects recipients outside the selected class', async () => {
+  let created = false;
+  const { service } = serviceWith({
+    schoolClass: { findUnique: async () => ({ id: 'class-a' }) },
+    studentProfile: { findMany: async () => [{ id: 'profile-a' }] },
+    subject: { upsert: async () => ({ id: 'subject-a' }) },
+    assignment: { create: async () => { created = true; return {}; } },
+  });
+  const dto = {
+    title: 'Individual work', subjectName: 'Math', classId: 'class-a', studentIds: ['profile-a', 'profile-b'],
+    questions: [{ type: 'SHORT_TEXT', prompt: 'Explain the method', points: 0 }],
+  };
+  await assert.rejects(() => service.create(dto, teacher), rejectedStatus(400));
+  assert.equal(created, false);
+});
+
+test('assignment DTO rejects duplicate student recipients', async () => {
+  const dto = plainToInstance(CreateAssignmentDto, {
+    title: 'Individual work', subjectName: 'Math', classId: 'class-a', studentIds: ['profile-a', 'profile-a'],
+    questions: [{ type: 'SHORT_TEXT', prompt: 'Explain the method' }],
+  });
+  const errors = await validate(dto);
+  assert.ok(errors.some(error => error.property === 'studentIds'));
+});
+
 test('teacher listing, results, publishing, and grading are restricted to the creator', async () => {
   const seen = [];
   const { service } = serviceWith({
