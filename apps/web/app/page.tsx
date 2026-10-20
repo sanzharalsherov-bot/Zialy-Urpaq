@@ -176,6 +176,8 @@ export default function Home() {
   const [newStudentNo, setNewStudentNo] = useState('');
   const [newStudentClassId, setNewStudentClassId] = useState('');
   const [assignmentClassId, setAssignmentClassId] = useState('');
+  const [assignmentRoster, setAssignmentRoster] = useState<any[]>([]);
+  const [assignmentStudentIds, setAssignmentStudentIds] = useState<string[]>([]);
   const [manualGrades, setManualGrades] = useState<Record<string, string>>({});
   const [manualComments, setManualComments] = useState<Record<string, string>>({});
   const [submissionFeedback, setSubmissionFeedback] = useState<Record<string, string>>({});
@@ -394,6 +396,7 @@ export default function Home() {
       if (availableFrom && dueAt && new Date(dueAt).getTime() <= new Date(availableFrom).getTime()) throw new Error('Срок сдачи должен быть позже даты открытия задания');
       const payload = {
         title: title.trim(), subjectName: subjectName.trim(), description: description.trim() || undefined, classId: assignmentClassId || undefined,
+        studentIds: assignmentStudentIds.length ? assignmentStudentIds : undefined,
         timeLimitMinutes: timeLimit ? Number(timeLimit) : undefined,
         availableFrom: availableFrom ? new Date(availableFrom).toISOString() : undefined,
         dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
@@ -411,7 +414,7 @@ export default function Home() {
       };
       const created = await request('/assignments', { method: 'POST', body: JSON.stringify(payload) });
       createdId = created.id;
-      setTitle(''); setSubjectName(''); setDescription(''); setAssignmentClassId(''); setTimeLimit(''); setAvailableFrom(''); setDueAt(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setQuestions([newQuestion()]);
+      setTitle(''); setSubjectName(''); setDescription(''); setAssignmentClassId(''); setAssignmentRoster([]); setAssignmentStudentIds([]); setTimeLimit(''); setAvailableFrom(''); setDueAt(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setQuestions([newQuestion()]);
       setAssignments(old => [created, ...old]); setView('assignments');
       await request(`/assignments/${created.id}/publish`, { method: 'PATCH' });
       createdId = null;
@@ -1037,7 +1040,27 @@ export default function Home() {
             </div>
             <div className="builderBasics">
               <label className="builderSubject">{t('Предмет')}<input value={subjectName} onChange={e => setSubjectName(e.target.value)} required maxLength={120} placeholder={t("Например, Математика")} /></label>
-              <label>{t('Класс')}<select value={assignmentClassId} onChange={e => setAssignmentClassId(e.target.value)}><option value="">{t('Все классы')}</option>{schoolClasses.map((item: any) => <option value={item.id} key={item.id}>{item.name} · {item.academicYear}</option>)}</select><small>Выбранный класс увидит это задание. Если не выбирать класс, задание будет доступно всем ученикам без привязки к классу.</small></label>
+              <label>{t('Класс')}<select value={assignmentClassId} onChange={async e => {
+                const classId = e.target.value;
+                setAssignmentClassId(classId);
+                setAssignmentRoster([]);
+                setAssignmentStudentIds([]);
+                if (!classId) return;
+                try {
+                  const roster = await request(`/school/assignment-roster?classId=${encodeURIComponent(classId)}`);
+                  setAssignmentRoster(roster);
+                } catch (error) {
+                  setMessage(error instanceof Error ? error.message : 'Не удалось загрузить учеников класса');
+                }
+              }}><option value="">{t('Все классы')}</option>{schoolClasses.map((item: any) => <option value={item.id} key={item.id}>{item.name} · {item.academicYear}</option>)}</select><small>Выбранный класс увидит это задание. Если не выбирать класс, задание будет доступно всем ученикам без привязки к классу.</small></label>
+              {assignmentClassId && <div className="assignmentStudentPicker">
+                <div className="assignmentStudentPickerHead"><b>Кому назначить</b><small>{assignmentStudentIds.length ? `Выбрано учеников: ${assignmentStudentIds.length}` : 'Если не выбирать учеников, задание получит весь класс.'}</small></div>
+                {assignmentRoster.length ? <div className="assignmentStudentRoster">{assignmentRoster.map((student: any) => <label className="assignmentStudentOption" key={student.id}>
+                  <input type="checkbox" checked={assignmentStudentIds.includes(student.id)} onChange={event => setAssignmentStudentIds(current => event.target.checked ? [...current, student.id] : current.filter(id => id !== student.id))} />
+                  <span>{student.user.lastName} {student.user.firstName}</span>
+                  {student.studentNo && <small>{student.studentNo}</small>}
+                </label>)}</div> : <small>В выбранном классе нет активных учеников.</small>}
+              </div>}
               <label className="builderTitle">{t('Название задания')}<input value={title} onChange={e => setTitle(e.target.value)} required maxLength={200} placeholder={t("Например, Дроби: контрольная работа")} /></label>
             </div>
             <div className="builderSectionHeading"><span>{t("Вопросы")}</span><small>{t("Сформулируйте вопрос, выберите тип ответа и укажите баллы.")}</small></div>
