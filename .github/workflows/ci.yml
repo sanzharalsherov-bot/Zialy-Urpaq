@@ -46,7 +46,6 @@ jobs:
     env:
       DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolcrm_test
       TEST_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolcrm_test
-      TEST_RESULTS_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolresults_test
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - name: Checkout
@@ -80,6 +79,8 @@ jobs:
       - name: Apply database migrations
         run: npx prisma migrate deploy --schema prisma/schema.prisma
       - name: Prepare isolated results database for integration and recovery tests
+        env:
+          TEST_RESULTS_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolresults_test
         run: |
           docker run --rm --network host \
             -v "${{ github.workspace }}:/workspace:ro" \
@@ -88,12 +89,27 @@ jobs:
               if ! psql "$TEST_DATABASE_URL" -Atqc "SELECT 1 FROM pg_database WHERE datname = $schoolresults_test$" | grep -qx 1; then
                 psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE schoolresults_test"
               fi
+              if ! psql "$TEST_DATABASE_URL" -lqt | grep -qw schoolcrm_outbox_test; then
+                psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE schoolcrm_outbox_test"
+              fi
               psql "$TEST_RESULTS_DATABASE_URL" -v ON_ERROR_STOP=1 -f /workspace/prisma/results-database/init/001-results.sql
             '
       - name: Verify isolated dual-database backup and restore
+        env:
+          TEST_RESULTS_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolresults_test
         run: node apps/api/test/qa-postgres-recovery-ci.mjs
+      - name: Apply migrations to isolated outbox integration database
+        env:
+          DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolcrm_outbox_test
+        run: npx prisma migrate deploy --schema prisma/schema.prisma
       - name: Run tests
         run: npm test
+      - name: Run isolated PostgreSQL results-outbox integration test
+        env:
+          DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolcrm_outbox_test
+          TEST_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolcrm_outbox_test
+          TEST_RESULTS_DATABASE_URL: postgresql://schoolcrm:ci-only-password@localhost:5432/schoolresults_test
+        run: node --test apps/api/test/results-outbox-postgres.test.cjs
       - name: Build production applications
         run: npm run build
 
