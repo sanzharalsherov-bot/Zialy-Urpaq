@@ -225,15 +225,19 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async joinRoom(code: string, firstName: string, lastName: string, token?: string, sourceIp?: string) {
+  async joinRoom(code: string, firstName: string, lastName: string, token?: string, sourceIp?: string, deviceId = 'legacy-device') {
     if (!/^\d{6}$/u.test(code)) throw new NotFoundException('Комната не найдена');
     if (!firstName?.trim() || !lastName?.trim() || firstName.length > 100 || lastName.length > 100) throw new BadRequestException('Введите имя и фамилию');
     if (token && (token.length > 128 || !/^[A-Za-z0-9_-]{40,80}$/u.test(token))) throw new NotFoundException('Комната не найдена');
-    const ipKey = createHash('sha256').update(`room-v2:${String(sourceIp || 'unknown').slice(0, 128)}`).digest('hex');
+    const source = String(sourceIp || 'unknown').slice(0, 128);
+    const device = typeof deviceId === 'string' && /^[A-Za-z0-9_-]{32,80}$/u.test(deviceId) ? deviceId : 'legacy-device';
+    const deviceKey = createHash('sha256').update(`room-v2-device:${device}`).digest('hex');
+    const ipKey = createHash('sha256').update(`room-v2:${source}:${deviceKey}`).digest('hex');
+    const ipSignalKey = createHash('sha256').update(`room-v2-ip:${source}`).digest('hex');
     const blocked = await this.prisma.roomJoinAttempt.findUnique({ where: { ipKey }, select: { blockedUntil: true } });
     if (blocked?.blockedUntil && blocked.blockedUntil > new Date()) throw new HttpException('Слишком много неверных кодов. Попробуйте через 15 минут.', HttpStatus.TOO_MANY_REQUESTS);
     const roomRecord = await this.prisma.testRoom.findUnique({ where: { joinCode: code }, select: { id: true } });
-    if (!roomRecord) return this.rejectInvalidRoomCode(ipKey);
+    if (!roomRecord) return this.rejectInvalidRoomCode(ipKey, ipSignalKey);
     const freshToken = token ? undefined : randomBytes(32).toString('base64url');
     const requestedHash = sessionDigest(token ?? freshToken!);
     return this.prisma.$transaction(async tx => {
@@ -249,7 +253,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
         await tx.roomParticipant.update({ where: { id: participant.id }, data: { lastSeenAt: serverNow } });
         const submission = await tx.submission.findFirst({ where: { roomId: room.id, participantId: participant.id }, orderBy: { attemptNo: 'desc' }, include: { answers: true } });
         if (!submission) throw new NotFoundException('Попытка не найдена');
-        if (blocked) await tx.roomJoinAttempt.deleteMany({ where: { ipKey } });
+        await tx.roomJoinAttempt.deleteMany({ where: { ipKey } });
         return { participantId: participant.id, attemptId: submission.id, roomId: room.id, status: room.status, resumed: true, studentRoom: this.studentView(room, submission) };
       }
 
@@ -276,17 +280,20 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
         }, include: { answers: true },
       });
       await tx.auditLog.create({ data: { action: 'ROOM_V2_JOINED', entityType: 'TestRoom', entityId: room.id, metadata: { participantId: participant.id }, ipAddress: ipKey } });
-      if (blocked) await tx.roomJoinAttempt.deleteMany({ where: { ipKey } });
+      await tx.roomJoinAttempt.deleteMany({ where: { ipKey } });
       return { participantId: participant.id, attemptId: submission.id, roomId: room.id, sessionToken: freshToken, status: room.status, resumed: false, studentRoom: this.studentView(room, submission, participantCount) };
     }, { maxWait: 20_000, timeout: 20_000 });
   }
 
-  private async rejectInvalidRoomCode(ipKey: string): Promise<never> {
+  private async rejectInvalidRoomCode(ipKey: string, ipSignalKey: string): Promise<never> {
     const now = new Date();
     const state = await this.prisma.$transaction(async tx => {
+      // Always acquire locks in the same order. The device+IP key can block one device,
+      // while the IP aggregate is only a signal for staff and never blocks the whole school.
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`room-v2-code:${ipKey}`}, 0))::text`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`room-v2-ip-signal:${ipSignalKey}`}, 0))::text`;
       const previous = await tx.roomJoinAttempt.findUnique({ where: { ipKey } });
-      if (previous?.blockedUntil && previous.blockedUntil > now) return { blocked: true };
+      if (previous?.blockedUntil && previous.blockedUntil > now) return { blocked: true, failures: previous.failures, ipFailures: 0 };
       const inWindow = previous && now.getTime() - previous.windowStartedAt.getTime() < 15 * 60_000;
       const failures = inWindow ? previous.failures + 1 : 1;
       const blockedUntil = failures >= 3 ? new Date(now.getTime() + 15 * 60_000) : null;
@@ -294,8 +301,19 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
         where: { ipKey }, create: { ipKey, failures, windowStartedAt: now, blockedUntil },
         update: { failures, windowStartedAt: inWindow ? previous.windowStartedAt : now, blockedUntil },
       });
-      await tx.auditLog.create({ data: { action: 'ROOM_CODE_REJECTED', entityType: 'TestRoom', metadata: { failures, blocked: !!blockedUntil }, ipAddress: ipKey } });
-      return { blocked: !!blockedUntil };
+      const ipPrevious = await tx.roomJoinAttempt.findUnique({ where: { ipKey: ipSignalKey } });
+      const ipInWindow = ipPrevious && now.getTime() - ipPrevious.windowStartedAt.getTime() < 15 * 60_000;
+      const ipFailures = ipInWindow ? ipPrevious.failures + 1 : 1;
+      await tx.roomJoinAttempt.upsert({
+        where: { ipKey: ipSignalKey },
+        create: { ipKey: ipSignalKey, failures: ipFailures, windowStartedAt: now, blockedUntil: null },
+        update: { failures: ipFailures, windowStartedAt: ipInWindow ? ipPrevious.windowStartedAt : now, blockedUntil: null },
+      });
+      if (ipFailures === 20) {
+        await tx.auditLog.create({ data: { action: 'ROOM_CODE_MASS_GUESSING_FLAGGED', entityType: 'TestRoom', metadata: { ipFailures, windowMinutes: 15 }, ipAddress: ipSignalKey } });
+      }
+      await tx.auditLog.create({ data: { action: 'ROOM_CODE_REJECTED', entityType: 'TestRoom', metadata: { failures, blocked: !!blockedUntil, ipFailures }, ipAddress: ipSignalKey } });
+      return { blocked: !!blockedUntil, failures, ipFailures };
     });
     if (state.blocked) throw new HttpException('Слишком много неверных кодов. Попробуйте через 15 минут.', HttpStatus.TOO_MANY_REQUESTS);
     throw new NotFoundException('Комната не найдена');
