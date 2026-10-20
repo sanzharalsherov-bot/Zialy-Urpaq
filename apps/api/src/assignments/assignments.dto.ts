@@ -118,3 +118,9 @@ export class GradeSubmissionDto {
   @IsOptional() @IsString() @MaxLength(10000)
   feedback?: string;
 }
+
+
+export class ReturnSubmissionDto {
+  @IsOptional() @IsString() @MaxLength(10000)
+  feedback?: string;
+}
