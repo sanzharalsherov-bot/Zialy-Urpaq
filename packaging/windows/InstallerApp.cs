@@ -11,10 +11,10 @@ using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
-[assembly: AssemblyTitle("Установщик Zialy Urpaq")]
-[assembly: AssemblyProduct("Zialy Urpaq")]
-[assembly: AssemblyDescription("Установка школьной платформы Zialy Urpaq")]
-[assembly: AssemblyCompany("Zialy Urpaq")]
+[assembly: AssemblyTitle("Установщик Zaily Urpaq")]
+[assembly: AssemblyProduct("Zaily Urpaq")]
+[assembly: AssemblyDescription("Установка школьной платформы Zaily Urpaq")]
+[assembly: AssemblyCompany("Zaily Urpaq")]
 [assembly: AssemblyVersion("1.0.0.0")]
 
 internal static class InstallerApp
@@ -57,7 +57,7 @@ internal static class InstallerApp
             catch (System.ComponentModel.Win32Exception ex)
             {
                 if (ex.NativeErrorCode != 1223)
-                    MessageBox.Show("Установщику нужны права администратора Windows, чтобы открыть доступ в школьной сети.", "Zialy Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("Установщику нужны права администратора Windows, чтобы открыть доступ в школьной сети.", "Zaily Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             return;
         }
@@ -154,7 +154,7 @@ internal sealed class InstallerForm : Form
 
     public InstallerForm()
     {
-        Text = "Установка Zialy Urpaq";
+        Text = "Установка Zaily Urpaq";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(800, 770);
         MinimumSize = new Size(800, 770);
@@ -222,7 +222,7 @@ internal sealed class InstallerForm : Form
         password.UseSystemPasswordChar = true;
         confirmPassword.UseSystemPasswordChar = true;
 
-        createDesktopShortcut.Text = "Создать ярлык Zialy Urpaq на рабочем столе";
+        createDesktopShortcut.Text = "Создать ярлык Zaily Urpaq на рабочем столе";
         createDesktopShortcut.Checked = true;
         createDesktopShortcut.AutoSize = true;
         createDesktopShortcut.Location = new Point(32, 435);
@@ -547,8 +547,8 @@ internal sealed class InstallerForm : Form
         if (shellType == null) throw new InvalidOperationException("Не удалось создать ярлык Windows.");
         dynamic shell = Activator.CreateInstance(shellType);
         if (createDesktopShortcut.Checked)
-            CreateShortcut(shell, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Zialy Urpaq.lnk"), installedExe, "--launch", installationPath);
-        CreateShortcut(shell, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), "Zialy Urpaq Server.lnk"), installedExe, "--start-server", installationPath);
+            CreateShortcut(shell, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Zaily Urpaq.lnk"), installedExe, "--launch", installationPath);
+        CreateShortcut(shell, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), "Zaily Urpaq Server.lnk"), installedExe, "--start-server", installationPath);
         Marshal.FinalReleaseComObject(shell);
     }
 
@@ -558,7 +558,7 @@ internal sealed class InstallerForm : Form
         shortcut.TargetPath = target;
         shortcut.Arguments = arguments;
         shortcut.WorkingDirectory = workingDirectory;
-        shortcut.Description = "Запустить сервер Zialy Urpaq";
+        shortcut.Description = "Запустить сервер Zaily Urpaq";
         shortcut.Save();
         Marshal.FinalReleaseComObject(shortcut);
     }
@@ -636,7 +636,7 @@ internal sealed class CloudflareForm : Form
     public CloudflareForm(string scriptPath)
     {
         script = scriptPath;
-        Text = "Cloudflare Tunnel — Zialy Urpaq";
+        Text = "Cloudflare Tunnel — Zaily Urpaq";
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -684,7 +684,7 @@ internal sealed class CloudflareForm : Form
     {
         if (String.IsNullOrWhiteSpace(hostname.Text)) { MessageBox.Show(this, "Введите Public Hostname из Cloudflare, например tests.school.kz.", "Нужен адрес школы", MessageBoxButtons.OK, MessageBoxIcon.Information); hostname.Focus(); return; }
         if (String.IsNullOrWhiteSpace(token.Text)) { MessageBox.Show(this, "Вставьте Tunnel Token из Cloudflare.", "Нужен токен", MessageBoxButtons.OK, MessageBoxIcon.Information); token.Focus(); return; }
-        if (!File.Exists(script)) { MessageBox.Show(this, "Не найден компонент настройки Cloudflare. Переустановите платформу.", "Zialy Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+        if (!File.Exists(script)) { MessageBox.Show(this, "Не найден компонент настройки Cloudflare. Переустановите платформу.", "Zaily Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
         try
         {
             var start = InstallerApp.CreateHiddenPowerShell(script);
@@ -709,7 +709,7 @@ internal sealed class CloudflareForm : Form
             status.ForeColor = Color.FromArgb(124, 113, 132);
             timer.Start();
         }
-        catch (Exception ex) { MessageBox.Show(this, "Не удалось запустить подключение.\r\n" + ex.Message, "Zialy Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (Exception ex) { MessageBox.Show(this, "Не удалось запустить подключение.\r\n" + ex.Message, "Zaily Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
     private void CaptureOutput(object sender, DataReceivedEventArgs e)
@@ -763,7 +763,7 @@ internal sealed class LaunchForm : Form
     public LaunchForm(string scriptPath)
     {
         script = scriptPath;
-        Text = "Запуск Zialy Urpaq";
+        Text = "Запуск Zaily Urpaq";
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -790,7 +790,7 @@ internal sealed class LaunchForm : Form
     {
         if (!File.Exists(script))
         {
-            MessageBox.Show(this, "Файл запуска сервера не найден. Повторно запустите установщик.", "Zialy Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, "Файл запуска сервера не найден. Повторно запустите установщик.", "Zaily Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Error);
             finished = true;
             Close();
             return;
@@ -810,7 +810,7 @@ internal sealed class LaunchForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "Не удалось запустить сервер.\r\n" + ex.Message, "Zialy Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, "Не удалось запустить сервер.\r\n" + ex.Message, "Zaily Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Error);
             finished = true;
             Close();
         }
@@ -839,7 +839,7 @@ internal sealed class LaunchForm : Form
         string details;
         lock (output) { details = output.ToString().Trim(); }
         if (String.IsNullOrWhiteSpace(details)) details = "Проверьте, что Docker Desktop запущен, и повторите запуск. Если проблема останется, обратитесь к сотруднику, который устанавливал сервер.";
-        MessageBox.Show(this, "Сервер не запустился.\r\n\r\n" + details, "Zialy Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        MessageBox.Show(this, "Сервер не запустился.\r\n\r\n" + details, "Zaily Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         Close();
     }
 
