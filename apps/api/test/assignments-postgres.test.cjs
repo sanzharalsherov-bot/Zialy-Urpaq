@@ -73,4 +73,26 @@ test('PostgreSQL: simultaneous attempts/submits/grades preserve limits, ownershi
   assert.equal(final.gradeHistory.length, 3);
   const finalHistory = final.gradeHistory.find(h => Number(h.newScore) === 8);
   assert.ok([4, 6].includes(Number(finalHistory.oldScore)), 'History reflects the immediately previous committed score');
+
+  await service.grade(started.submission.id, {
+    answers: [
+      { answerId: rows[0].id, awardedPoints: 3, teacherComment: 'Strong reasoning' },
+      { answerId: rows[1].id, awardedPoints: 5, teacherComment: 'Clear explanation' },
+    ],
+    feedback: 'Good work. Keep showing your reasoning.',
+  }, teacher);
+  const review = await service.studentResult(started.submission.id, student);
+  assert.equal(review.score, 8);
+  assert.equal(review.feedback, 'Good work. Keep showing your reasoning.');
+  assert.deepEqual(review.answers.map(a => a.teacherComment), ['Strong reasoning', 'Clear explanation']);
+  assert.deepEqual(review.answers.map(a => a.awardedPoints), [3, 5]);
+  assert.ok(review.answers.every(a => a.question.options.every(option => !('isCorrect' in option))));
+  assert.ok(!JSON.stringify(review).includes('correctValue'), 'Student review must not expose marking config');
+  await assert.rejects(() => service.studentResult(started.submission.id, { ...student, sub: 'different-student' }), e => e.getStatus() === 404);
+
+  const dashboard = await service.dashboard(teacher);
+  assert.ok(dashboard.totalSubmissions >= 2);
+  const staffResults = await service.results(manual.id, teacher);
+  assert.equal(staffResults.submissions.length, 1);
+  assert.equal(staffResults.submissions[0].feedback, 'Good work. Keep showing your reasoning.');
 });
