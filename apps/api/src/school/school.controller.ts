@@ -14,7 +14,7 @@ export class SchoolController {
   constructor(private readonly school: SchoolService) {}
 
   @Get('classes')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   listClasses(@CurrentUser() user: AuthenticatedUser) {
     return this.school.listClasses(user);
   }
