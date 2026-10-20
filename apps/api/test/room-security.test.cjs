@@ -117,6 +117,36 @@ test('legacy proctor events count continuous episodes once and preserve saved an
   assert.equal(finalized.finishReason, 'PROCTORING_VIOLATION_LIMIT');
 });
 
+test('deadline takes precedence over a proctor violation during atomic finalization', async () => {
+  const service = makeService({});
+  const studentWithIdentity = { ...student, studentProfileId: undefined };
+  const submission = {
+    id: 's1', assignmentId: 'a1', studentId: null,
+    studentIdentityKey: require('node:crypto').createHash('sha256').update(`student:${studentWithIdentity.sub}`).digest('hex'),
+    status: 'IN_PROGRESS', startedAt: new Date(Date.now() - 2 * 60_000),
+    assignment: {
+      timeLimitMinutes: 1, dueAt: null,
+      questions: [{ id: 'q1', type: 'SINGLE_CHOICE', points: 1, config: null, options: [{ id: 'correct', isCorrect: true }] }],
+    },
+    answers: [{ id: 'answer-1', questionId: 'q1', textValue: null, numericValue: null, jsonValue: 'correct', isCorrect: null, awardedPoints: null }],
+  };
+  let update;
+  const tx = {
+    submission: {
+      findFirst: async () => submission,
+      update: async ({ data }) => { update = data; return { id: 's1', ...data }; },
+    },
+    answer: { deleteMany: async () => {}, createMany: async () => {} },
+  };
+  const result = await service.finalizeInTransaction(
+    tx, 'a1', 's1', { answers: [{ questionId: 'q1', jsonValue: 'incorrect' }] },
+    studentWithIdentity, 'PROCTORING_VIOLATION_LIMIT',
+  );
+  assert.equal(update.status, 'EXPIRED');
+  assert.equal(update.finishReason, 'TIME_LIMIT');
+  assert.equal(result.finishReason, 'TIME_LIMIT');
+});
+
 test('question and option orders are fixed per attempt and include every ID once', () => {
   const service = makeService({});
   const result = service.attemptOrder({ shuffleQuestions: true, shuffleOptions: true, questions: [
