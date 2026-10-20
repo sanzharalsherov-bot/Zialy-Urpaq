@@ -3,6 +3,7 @@ const { readFileSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const { resolve } = require('node:path');
 const { test } = require('node:test');
+const { validateProductionConfiguration } = require('../dist/config/production-config');
 
 const startServer = readFileSync(resolve(__dirname, '../../../packaging/windows/Start-Server.ps1'), 'utf8');
 const installer = readFileSync(resolve(__dirname, '../../../packaging/windows/install.ps1'), 'utf8');
@@ -128,4 +129,15 @@ test('plain HTTP is bound to localhost and never opened to the school LAN', () =
   assert.match(installer, /http:\/\/127\.0\.0\.1:8080\/api\/health/u);
   assert.match(installer, /http:\/\/localhost:8080/u);
   assert.match(caddy, /:80\s*\{\s*import school_routes/u);
+});
+
+
+test('production configuration refuses missing, short, or placeholder JWT secrets', () => {
+  const base = { NODE_ENV: 'production', WEB_ORIGIN: 'http://localhost' };
+  for (const JWT_SECRET of ['', 'short', 'replace-with-random-secret-at-least-32-bytes', 'your-secret-' + 'x'.repeat(40)]) {
+    assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET }), /JWT_SECRET must be a unique random secret/u);
+  }
+  assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET: 'a'.repeat(32), WEB_ORIGIN: '' }), /WEB_ORIGIN must be configured/u);
+  assert.doesNotThrow(() => validateProductionConfiguration({ ...base, JWT_SECRET: 'r'.repeat(48) }));
+  assert.doesNotThrow(() => validateProductionConfiguration({ NODE_ENV: 'test' }));
 });
