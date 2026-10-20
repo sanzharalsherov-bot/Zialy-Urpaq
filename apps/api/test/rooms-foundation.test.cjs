@@ -258,6 +258,21 @@ test('third visibility episode grades and preserves saved answers with violation
   assert.equal(db.submissions[0].totalScore, 1);
 });
 
+test('manual screen-share stop counts once and restarting sharing permits a later violation episode', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+  db.room.status = 'RUNNING'; db.room.startedAt = new Date(); db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+  const first = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' });
+  const duplicate = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' });
+  assert.equal(first.warnings, 1);
+  assert.equal(duplicate.warnings, 1);
+  assert.equal(duplicate.duplicate, true);
+  await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_RESTORED' });
+  const second = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' });
+  assert.equal(second.warnings, 2);
+});
+
 test('room analytics reports per-question accuracy and excludes unfinished attempts', async () => {
   const db = fakeJoinPrisma(); const service = new RoomsService(db);
   db.testRoom.findFirst = async ({ where }) => !where.creatorId || where.creatorId === 'teacher-1' ? ({ ...db.room, assignment: { title: 'Math' }, snapshot: { questions: [
