@@ -517,7 +517,13 @@ internal sealed class InstallerForm : Form
             status.Text = "Платформа готова к работе";
             status.ForeColor = Color.FromArgb(35, 130, 85);
             string addressText = addresses.ToString().Trim();
-            hint.Text = (String.IsNullOrWhiteSpace(addressText) ? "Сайт откроется в браузере." : addressText) + (String.IsNullOrWhiteSpace(adminEmailUsed) ? "" : "\r\nВход администратора: " + adminEmailUsed) + (String.IsNullOrWhiteSpace(studentAccessCodeUsed) ? "" : "\r\nОбщий код учеников: " + studentAccessCodeUsed) + (String.IsNullOrWhiteSpace(launcherWarning) ? "" : "\r\n" + launcherWarning);
+            bool adminCredentialsUnchanged = diagnostics.ToString().Contains("ADMIN_CREDENTIALS_NOT_CHANGED");
+            hint.Text = (String.IsNullOrWhiteSpace(addressText) ? "Сайт откроется в браузере." : addressText)
+                + (adminCredentialsUnchanged
+                    ? "\r\nСуществующие аккаунты сохранены. Пароль из этой формы не применялся. Используйте ярлык восстановления пароля администратора."
+                    : (String.IsNullOrWhiteSpace(adminEmailUsed) ? "" : "\r\nВход администратора: " + adminEmailUsed)
+                      + (String.IsNullOrWhiteSpace(studentAccessCodeUsed) ? "" : "\r\nОбщий код учеников: " + studentAccessCodeUsed))
+                + (String.IsNullOrWhiteSpace(launcherWarning) ? "" : "\r\n" + launcherWarning);
             hint.Height = 72;
             hint.ForeColor = Color.FromArgb(35, 130, 85);
             installButton.Text = "Закрыть";
