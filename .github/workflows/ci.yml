@@ -21,10 +21,11 @@ on:
 permissions:
   contents: read
 
-# Push and pull_request events can both validate the same commit. Keep only the
-# newest run for a branch to avoid wasting CI minutes on superseded revisions.
+# Keep newer commits from cancelling one another within the same event scope.
+# A push to dev and a PR from dev must have separate groups; otherwise they
+# cancel each other's checks and leave the release candidate without a verdict.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
