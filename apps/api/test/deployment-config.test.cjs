@@ -74,3 +74,16 @@ test('Windows backup cleans temporary dumps on success and failure paths', () =>
   assert.match(backup, /if \(-not \$backupSucceeded -and \(Test-Path -LiteralPath \$FilePath\)\)/u);
   assert.match(backup, /Write-Warning .*Проверьте контейнер вручную/u);
 });
+
+test('release smoke check verifies private-LAN HTTPS without credentials or TLS bypass', () => {
+  const smoke = readFileSync(resolve(__dirname, './qa-release-smoke.mjs'), 'utf8');
+  assert.match(smoke, /rejectUnauthorized:\s*true/u);
+  assert.match(smoke, /isPrivateIpv4\(base\.hostname\)/u);
+  assert.match(smoke, /Only localhost or a private\/link-local IPv4 address is allowed/u);
+  assert.match(smoke, /\/api\/health/u);
+  assert.match(smoke, /resultsDelivery\.pendingCount === 0/u);
+  assert.doesNotMatch(smoke, /rejectUnauthorized:\s*false/u);
+  assert.doesNotMatch(smoke, /Authorization:\s*['"`]/u);
+  assert.match(smoke, /mediaVerified:\s*false/u);
+  assert.match(smoke, /backupRestoreVerified:\s*false/u);
+});
