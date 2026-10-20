@@ -52,7 +52,7 @@ function fakeJoinPrisma(status = 'LOBBY') {
       findMany: async ({ where }) => submissions.filter(s => s.roomId === where.roomId && s.status === where.status).map(s => ({ id: s.id, studentFirstName: s.studentFirstName, studentLastName: s.studentLastName, totalScore: s.totalScore, submittedAt: s.submittedAt })),
     },
     proctorEvent: {
-      findFirst: async ({ where, orderBy }) => proctorEvents.filter(event => event.submissionId === where.submissionId).sort((a, b) => b.createdAt - a.createdAt)[0] ?? null,
+      findFirst: async ({ where, orderBy }) => proctorEvents.filter(event => event.submissionId === where.submissionId && (!where.eventType?.in || where.eventType.in.includes(event.eventType))).sort((a, b) => b.createdAt - a.createdAt)[0] ?? null,
       create: async ({ data }) => { const event = { id: `proctor-${proctorEvents.length + 1}`, createdAt: new Date(Date.now() + proctorEvents.length), ...data }; proctorEvents.push(event); return event; },
     },
     testRoom: { findUnique: async ({ where }) => where.joinCode ? (where.joinCode === room.joinCode ? { id: room.id } : null) : room, update: async ({ data }) => Object.assign(room, data) },
@@ -286,6 +286,23 @@ test('manual screen-share stop counts once and restarting sharing permits a late
   await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_RESTORED' });
   const second = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' });
   assert.equal(second.warnings, 2);
+});
+
+test('overlapping visibility and screen-share violations are tracked as independent episodes', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+  db.room.status = 'RUNNING'; db.room.startedAt = new Date();
+  db.submissions[0].status = 'IN_PROGRESS';
+  assert.equal((await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'VISIBILITY_HIDDEN' })).warnings, 1);
+  assert.equal((await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' })).warnings, 2);
+  await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_RESTORED' });
+  const duplicateVisibility = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'VISIBILITY_HIDDEN' });
+  assert.equal(duplicateVisibility.warnings, 2);
+  assert.equal(duplicateVisibility.duplicate, true);
+  await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'VISIBILITY_RESTORED' });
+  const nextScreenViolation = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' });
+  assert.equal(nextScreenViolation.warnings, 3);
+  assert.equal(nextScreenViolation.finished, true);
 });
 
 test('room analytics reports per-question accuracy and excludes unfinished attempts', async () => {
