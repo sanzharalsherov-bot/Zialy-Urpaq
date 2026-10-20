@@ -20,6 +20,14 @@ test('Windows installation starts LiveKit as part of the school platform', () =>
   assert.match(installer, /@\('compose',\s*'--profile',\s*'media',\s*'-p',\s*\$composeProjectName/u);
 });
 
+test('Windows installer detects LiveKit port conflicts before starting the stack and preserves existing data', () => {
+  assert.match(installer, /function Assert-LiveKitPortsAvailable/u);
+  assert.match(installer, /'ps', '--filter', "publish=\$port"/u);
+  assert.match(installer, /ownerProject -ne \$composeProjectName/u);
+  assert.match(installer, /Assert-LiveKitPortsAvailable\s+Write-Host ''\s+Write-Host 'Собираю и запускаю приложение/u);
+  assert.match(installer, /Не удаляйте volumes и не выполняйте docker compose down -v/u);
+});
+
 test('API waits for both PostgreSQL databases before startup', () => {
   assert.match(compose, /results-postgres:\s*\n\s+condition: service_healthy/u);
   assert.match(compose, /postgres:\s*\n\s+condition: service_healthy/u);
