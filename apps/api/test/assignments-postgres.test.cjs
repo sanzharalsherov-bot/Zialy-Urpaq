@@ -90,6 +90,11 @@ test('PostgreSQL: simultaneous attempts/submits/grades preserve limits, ownershi
   assert.ok(!JSON.stringify(review).includes('correctValue'), 'Student review must not expose marking config');
   await assert.rejects(() => service.studentResult(started.submission.id, { ...student, sub: 'different-student' }), e => e.getStatus() === 404);
 
+  const history = await service.listStudentResults(student);
+  assert.equal(history.length, 2);
+  assert.ok(history.some(item => item.submissionId === started.submission.id && item.feedback === 'Good work. Keep showing your reasoning.'));
+  assert.ok(history.every(item => !('answers' in item) && !('correctValue' in item)), 'History is a minimal summary, not an answer-key endpoint');
+
   const dashboard = await service.dashboard(teacher);
   assert.ok(dashboard.totalSubmissions >= 2);
   const staffResults = await service.results(manual.id, teacher);
