@@ -823,7 +823,13 @@ export default function Home() {
   useEffect(() => {
     if (!token || user?.role !== 'STUDENT' || !studentResult?.submissionId || studentResult.score !== null) return;
     const poll = async () => {
-      try { setStudentResult(await request(`/student/submissions/${studentResult.submissionId}/result`)); } catch { /* Keep the submitted result while the teacher is reviewing. */ }
+      try {
+        const result = await request(`/student/submissions/${studentResult.submissionId}/result`);
+        setStudentResult(result);
+        if (result.score !== null) {
+          try { setStudentHistory(await request('/student/results')); } catch { /* The visible result remains available. */ }
+        }
+      } catch { /* Keep the submitted result while the teacher is reviewing. */ }
     };
     const interval = window.setInterval(poll, 5000);
     return () => window.clearInterval(interval);
