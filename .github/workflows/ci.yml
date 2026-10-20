@@ -57,6 +57,21 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Validate deployment and QA script syntax
+        env:
+          POSTGRES_PASSWORD: ci-only-compose-check
+          JWT_SECRET: ci-only-jwt-secret-not-for-production
+          SCHOOL_LAN_IP: 127.0.0.1
+          LIVEKIT_API_KEY: devkey
+          LIVEKIT_API_SECRET: ci-only-livekit-secret
+          LIVEKIT_PUBLIC_URL: wss://127.0.0.1
+          LIVEKIT_NODE_IP: 127.0.0.1
+        run: |
+          docker compose -f compose.production.yaml config --quiet
+          node --check apps/api/test/qa-room-load.mjs
+          node --check apps/api/test/qa-lan-acceptance.mjs
+          node --check apps/api/test/qa-lan-signaling.mjs
+          node --check apps/api/test/qa-backup-recovery.mjs
       - name: Generate Prisma Client
         run: npx prisma generate --schema prisma/schema.prisma
       - name: Apply database migrations
