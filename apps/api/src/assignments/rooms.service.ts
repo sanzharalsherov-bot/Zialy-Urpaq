@@ -396,6 +396,8 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.$transaction(async tx => {
       const participant = await tx.roomParticipant.findFirst({ where: { roomId, sessionHash: tokenHash }, select: { id: true } });
       if (!participant) throw new NotFoundException('Комната не найдена');
+      // Keep room-level mutations in a consistent lock order: room first, then attempt.
+      await tx.$queryRaw`SELECT "id" FROM "TestRoom" WHERE "id" = ${roomId} FOR UPDATE`;
       const submission = await tx.submission.findFirst({ where: { roomId, participantId: participant.id }, orderBy: { attemptNo: 'desc' }, select: { id: true, status: true } });
       if (!submission || submission.status !== SubmissionStatus.IN_PROGRESS) throw new NotFoundException('Активная попытка не найдена');
       await tx.$queryRaw`SELECT "id" FROM "Submission" WHERE "id" = ${submission.id} FOR UPDATE`;
@@ -468,6 +470,8 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.$transaction(async tx => {
       const participant = await tx.roomParticipant.findFirst({ where: { roomId, sessionHash: tokenHash }, select: { id: true } });
       if (!participant) throw new NotFoundException('Комната не найдена');
+      // Keep room-level mutations in a consistent lock order: room first, then attempt.
+      await tx.$queryRaw`SELECT "id" FROM "TestRoom" WHERE "id" = ${roomId} FOR UPDATE`;
       const attempt = await tx.submission.findFirst({ where: { roomId, participantId: participant.id }, orderBy: { attemptNo: 'desc' }, select: { id: true } });
       if (!attempt) throw new NotFoundException('Попытка не найдена');
       await tx.$queryRaw`SELECT "id" FROM "Submission" WHERE "id" = ${attempt.id} FOR UPDATE`;
@@ -515,6 +519,8 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     const result = await this.prisma.$transaction(async tx => {
       const participant = await tx.roomParticipant.findFirst({ where: { roomId, sessionHash: tokenHash }, select: { id: true } });
       if (!participant) throw new NotFoundException('Комната не найдена');
+      // Keep room-level mutations in a consistent lock order: room first, then attempt.
+      await tx.$queryRaw`SELECT "id" FROM "TestRoom" WHERE "id" = ${roomId} FOR UPDATE`;
       const submission = await tx.submission.findFirst({ where: { roomId, participantId: participant.id }, orderBy: { attemptNo: 'desc' }, select: { id: true, status: true } });
       if (!submission) throw new NotFoundException('Попытка не найдена');
       if (submission.status === SubmissionStatus.GRADED) return { submissionId: submission.id, alreadySubmitted: true };
