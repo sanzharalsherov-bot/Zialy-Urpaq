@@ -288,6 +288,21 @@ test('manual screen-share stop counts once and restarting sharing permits a late
   assert.equal(second.warnings, 2);
 });
 
+test('deadline takes precedence over a proctor event received after time expires', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+  db.room.status = 'RUNNING';
+  db.room.startedAt = new Date('2026-10-17T23:00:00.000Z');
+  db.room.durationMinutes = 30;
+  db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+  const result = await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' });
+  assert.equal(result.finished, true);
+  assert.equal(db.submissions[0].finishReason, 'TIME_LIMIT');
+  assert.equal(db.submissions[0].proctorWarnings, 0);
+  assert.equal(db.proctorEvents.length, 0);
+});
+
 test('overlapping visibility and screen-share violations are tracked as independent episodes', async () => {
   const db = fakeJoinPrisma(); const service = new RoomsService(db);
   const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
