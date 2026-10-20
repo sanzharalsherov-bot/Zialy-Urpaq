@@ -932,6 +932,33 @@ export default function Home() {
             {accounts.length >= 200 && <p className="helperText">{t("Здесь показаны последние 200 аккаунтов.")}</p>}
           </section>
         </div>}
+        {user.role === 'ADMIN' && view === 'school' && <div className="accountWorkspace">
+          <section className="panel accountFormPanel">
+            <div className="panelHead"><div><h3>Создать класс</h3><p>Добавьте класс, чтобы назначать задания группам учеников.</p></div></div>
+            <form className="formStack" onSubmit={createSchoolClass}>
+              <label>Название класса<input value={classNameDraft} onChange={e => setClassNameDraft(e.target.value)} required maxLength={80} placeholder="Например, 7А" /></label>
+              <label>Учебный год<input value={academicYearDraft} onChange={e => setAcademicYearDraft(e.target.value)} required maxLength={20} placeholder="2026-2027" /></label>
+              <button className="primaryButton" disabled={busy}>Создать класс</button>
+            </form>
+          </section>
+          <section className="panel accessCodePanel">
+            <div className="panelHead"><div><h3>Добавить ученика</h3><p>Ученик будет связан с выбранным классом и сможет войти по общему коду школы.</p></div></div>
+            <form className="formStack" onSubmit={createSchoolStudent}>
+              <div className="formGrid"><label>Имя<input value={newStudentFirstName} onChange={e => setNewStudentFirstName(e.target.value)} required maxLength={100} /></label><label>Фамилия<input value={newStudentLastName} onChange={e => setNewStudentLastName(e.target.value)} required maxLength={100} /></label></div>
+              <label>Класс<select value={newStudentClassId} onChange={e => setNewStudentClassId(e.target.value)} required><option value="">Выберите класс</option>{schoolClasses.map((item: any) => <option value={item.id} key={item.id}>{item.name} · {item.academicYear}</option>)}</select></label>
+              <label>Табельный номер <small>Необязательно</small><input value={newStudentNo} onChange={e => setNewStudentNo(e.target.value)} maxLength={40} /></label>
+              <button className="primaryButton" disabled={busy || !schoolClasses.length}>Добавить ученика</button>
+            </form>
+          </section>
+          <section className="panel accountListPanel">
+            <div className="panelHead"><div><h3>Классы</h3><p>Классы и количество учеников</p></div><span className="builderCount">{schoolClasses.length}</span></div>
+            {schoolClasses.length ? <div className="accountList">{schoolClasses.map((item: any) => <article className="accountRow" key={item.id}><div className="accountAvatar teacher">К</div><div className="accountIdentity"><b>{item.name}</b><span>{item.academicYear}</span></div><span className="accountState active">{item._count?.students ?? 0} учеников</span></article>)}</div> : <p className="emptyState">Классов пока нет. Создайте первый класс.</p>}
+          </section>
+          <section className="panel accountListPanel">
+            <div className="panelHead"><div><h3>Ученики</h3><p>Список учеников, связанных с классами</p></div><span className="builderCount">{schoolStudents.length}</span></div>
+            {schoolStudents.length ? <div className="accountList">{schoolStudents.map((item: any) => <article className="accountRow" key={item.id}><div className="accountAvatar">{item.user.firstName?.[0]}{item.user.lastName?.[0]}</div><div className="accountIdentity"><b>{item.user.lastName} {item.user.firstName}</b><span>{item.studentNo || 'Без табельного номера'}</span></div><span className="accountRole teacher">{item.schoolClass?.name || 'Без класса'}</span><span className="accountState active">{item.user.isActive ? 'Активен' : 'Отключён'}</span></article>)}</div> : <p className="emptyState">Учеников пока нет. Добавьте ученика в список.</p>}
+          </section>
+        </div>}
         {isStaff && view === 'create' && <section className="panel workPanel">
           <div className="panelHead"><div><h3>{t('Конструктор задания')}</h3><p>{t("Сначала предмет и название, затем вопросы и настройки прохождения.")}</p></div><span className="builderCount">{questions.length} {questionCountLabel}</span></div>
           <form className="formStack" onSubmit={createAssignment}>
