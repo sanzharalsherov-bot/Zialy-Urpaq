@@ -101,6 +101,26 @@ test('teacher scope prevents access to another teacher assignment', async () => 
   await assert.rejects(() => service.createRoom('missing', { lobbyTarget: 10 }, { sub: 'teacher-1', role: 'TEACHER' }), e => e.getStatus() === 404);
 });
 
+test('teacher cannot read or analyze another teacher room', async () => {
+  const queries = [];
+  const db = {
+    testRoom: {
+      findFirst: async ({ where }) => { queries.push({ operation: 'findFirst', where }); return null; },
+      findMany: async ({ where }) => { queries.push({ operation: 'findMany', where }); return []; },
+    },
+    assignment: { findFirst: async ({ where }) => { queries.push({ operation: 'assignment', where }); return null; } },
+  };
+  const service = new RoomsService(db);
+  const actor = { sub: 'teacher-2', role: 'TEACHER' };
+  await assert.rejects(() => service.getRoom('room-owned-by-teacher-1', actor), error => error.getStatus() === 404);
+  await assert.rejects(() => service.roomAnalytics('room-owned-by-teacher-1', actor), error => error.getStatus() === 404);
+  await service.listRooms(actor, 'assignment-1');
+  assert.equal(queries[0].where.creatorId, 'teacher-2');
+  assert.equal(queries[1].where.creatorId, 'teacher-2');
+  assert.equal(queries[2].where.creatorId, 'teacher-2');
+  assert.equal(queries[2].where.assignmentId, 'assignment-1');
+});
+
 test('room code collision retries with a new code', async () => {
   let calls = 0;
   const db = fakePrisma();
