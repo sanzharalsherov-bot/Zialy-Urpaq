@@ -91,6 +91,8 @@ npx prisma migrate dev
 - `GET /api/assignments/:id/results` — все попытки, ФИО, время, ответы и баллы.
 - `GET /api/rooms/:roomId/analytics` — сводка завершённых попыток комнаты: средний балл/процент, медианное время, точность и число ошибок по каждому вопросу, а также топ учеников. Доступна только админу и владельцу комнаты-преподавателю.
 - `GET /api/student/assignments` — опубликованные задания для учеников.
+- `GET /api/student/results` — личная история отправленных попыток, оценок и общего отзыва преподавателя.
+- `GET /api/student/submissions/:submissionId/result` — результат собственной попытки, баллы по вопросам и комментарии преподавателя; правильные варианты и ключи проверки не раскрываются.
 - `POST /api/student/assignments/:id/start` — начало попытки ученика, вошедшего по общему коду.
 - `POST /api/student/assignments/:id/submissions/:submissionId/submit` — отправка ответов.
 - `PATCH /api/submissions/:id/grade` — сохранение ручной оценки.
