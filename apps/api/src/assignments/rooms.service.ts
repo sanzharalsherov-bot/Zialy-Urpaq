@@ -452,8 +452,16 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       await tx.$queryRaw`SELECT "id" FROM "Submission" WHERE "id" = ${attempt.id} FOR UPDATE`;
       const current = await tx.submission.findFirst({ where: { id: attempt.id, roomId }, select: { id: true, status: true, proctorWarnings: true } });
       if (!current || current.status !== SubmissionStatus.IN_PROGRESS) return { warnings: current?.proctorWarnings ?? 0, finished: current?.status === SubmissionStatus.GRADED };
-      const room = await tx.testRoom.findUnique({ where: { id: roomId }, select: { status: true, snapshot: true } });
+      const room = await tx.testRoom.findUnique({ where: { id: roomId }, select: { status: true, snapshot: true, startedAt: true, durationMinutes: true } });
       if (!room || room.status !== RoomStatus.RUNNING) throw new BadRequestException('Тест уже завершён');
+      const clockRows = await tx.$queryRaw<Array<{ now: Date }>>`SELECT NOW() AS now`;
+      const authoritativeNow = clockRows[0]?.now ?? new Date();
+      const deadlinePassed = !!room.startedAt && room.durationMinutes !== null
+        && authoritativeNow.getTime() >= room.startedAt.getTime() + room.durationMinutes * 60_000;
+      if (deadlinePassed) {
+        const result = await this.finalizeRoomAttempt(tx, roomId, current.id, room.snapshot as RoomSnapshot | null, authoritativeNow, 'TIME_LIMIT');
+        return { warnings: current.proctorWarnings, finished: true, ...result };
+      }
       const episode = dto.eventType.startsWith('VISIBILITY_') ? 'VISIBILITY' : 'SCREEN_SHARE';
       const violationEvent = episode === 'VISIBILITY' ? 'VISIBILITY_HIDDEN' : 'SCREEN_SHARE_ENDED';
       const restoreEvent = episode === 'VISIBILITY' ? 'VISIBILITY_RESTORED' : 'SCREEN_SHARE_RESTORED';
