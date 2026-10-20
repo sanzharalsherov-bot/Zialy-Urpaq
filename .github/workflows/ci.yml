@@ -88,6 +88,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Validate PowerShell deployment scripts
+        shell: powershell
+        run: |
+          $files = @(
+            'packaging/windows/Build-Installer.ps1',
+            'packaging/windows/install.ps1',
+            'packaging/windows/Backup.ps1'
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "${file}: $($_.Message) at line $($_.Extent.StartLineNumber)" }
+              exit 1
+            }
+          }
       - name: Build graphical installer
         shell: powershell
         run: .\\packaging\\windows\\Build-Installer.ps1
