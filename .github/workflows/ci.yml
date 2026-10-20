@@ -61,6 +61,7 @@ jobs:
         env:
           POSTGRES_PASSWORD: ci-only-compose-check
           JWT_SECRET: ci-only-jwt-secret-not-for-production
+          WEB_ORIGIN: https://127.0.0.1:8443
           SCHOOL_LAN_IP: 127.0.0.1
           LIVEKIT_API_KEY: devkey
           LIVEKIT_API_SECRET: ci-only-livekit-secret
