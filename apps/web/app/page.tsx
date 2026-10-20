@@ -745,7 +745,7 @@ export default function Home() {
 
   const deadlines = submission && selectedAssignment ? [
     selectedAssignment.timeLimitMinutes ? new Date(submission.startedAt).getTime() + selectedAssignment.timeLimitMinutes * 60000 : Infinity,
-    selectedAssignment.dueAt ? new Date(selectedAssignment.dueAt).getTime() : Infinity,
+    submission.finishReason === 'RESUBMISSION' ? Infinity : selectedAssignment.dueAt ? new Date(selectedAssignment.dueAt).getTime() : Infinity,
   ] : [Infinity];
   const deadline = Math.min(...deadlines);
   const timeRemaining = Number.isFinite(deadline) ? Math.max(0, Math.ceil((deadline - clock) / 1000)) : null;
