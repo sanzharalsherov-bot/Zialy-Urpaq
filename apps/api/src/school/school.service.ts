@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/auth.types';
 import { CreateClassDto, CreateStudentDto, CreateSubjectDto } from './school.dto';
@@ -69,6 +69,25 @@ export class SchoolService {
         schoolClass: { select: { id: true, name: true, academicYear: true } },
       },
       take: 2000,
+    });
+  }
+
+  async listAssignmentRoster(user: AuthenticatedUser, classId?: string) {
+    if (user.role !== UserRole.ADMIN && user.role !== UserRole.TEACHER) {
+      throw new ForbiddenException('Недостаточно прав');
+    }
+    if (!classId?.trim()) throw new BadRequestException('Для списка учеников выберите класс');
+    const schoolClass = await this.prisma.schoolClass.findUnique({ where: { id: classId }, select: { id: true } });
+    if (!schoolClass) throw new NotFoundException('Класс не найден');
+    return this.prisma.studentProfile.findMany({
+      where: { classId, user: { isActive: true } },
+      orderBy: [{ user: { lastName: 'asc' } }, { user: { firstName: 'asc' } }],
+      select: {
+        id: true,
+        studentNo: true,
+        user: { select: { firstName: true, lastName: true } },
+      },
+      take: 500,
     });
   }
 
