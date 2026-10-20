@@ -169,7 +169,7 @@ export default function Home() {
   const [assignmentClassId, setAssignmentClassId] = useState('');
   const [manualGrades, setManualGrades] = useState<Record<string, string>>({});
   const [manualComments, setManualComments] = useState<Record<string, string>>({});
-  const [submissionFeedback, setSubmissionFeedback] = useState('');
+  const [submissionFeedback, setSubmissionFeedback] = useState<Record<string, string>>({});
   const [restoringSession, setRestoringSession] = useState(true);
   const [clock, setClock] = useState(Date.now());
   const [onlineRetry, setOnlineRetry] = useState(0);
@@ -196,7 +196,7 @@ export default function Home() {
     writeStorage(window.sessionStorage, ATTEMPT_KEY, null);
     writeStorage(window.localStorage, TOKEN_KEY, null);
     setToken(''); setUser(null); setSubmission(null); setSelectedAssignment(null); setSelectedResults(null); setStudentResult(null);
-    setAssignments([]); setAvailable([]); setAccounts([]); setAnswers({}); setManualGrades({}); setManualComments({}); setSubmissionFeedback('');
+    setAssignments([]); setAvailable([]); setAccounts([]); setAnswers({}); setManualGrades({}); setManualComments({}); setSubmissionFeedback({});
     setPassword(''); setStudentCode(''); setStudentFirstName(''); setStudentLastName(''); setEmail('');
     setAccountPassword(''); setAccountEmail(''); setAccountFirstName(''); setAccountLastName('');
     setStudentAccessCodeInput(''); setStudentAccessCodeConfigured(false); setSchoolClasses([]); setSchoolStudents([]); setClassNameDraft(''); setNewStudentFirstName(''); setNewStudentLastName(''); setNewStudentNo(''); setNewStudentClassId(''); setAssignmentClassId('');
@@ -563,7 +563,7 @@ export default function Home() {
     setBusy(true); setMessage('');
     try {
       const result = await request(`/assignments/${assignment.id}/results`);
-      setSelectedResults(result); setManualGrades({}); setManualComments({}); setSubmissionFeedback(''); setMonitorOpen(false); setView('results');
+      setSelectedResults(result); setManualGrades({}); setManualComments({}); setSubmissionFeedback(old => { const next = { ...old }; delete next[item.id]; return next; }); setMonitorOpen(false); setView('results');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось загрузить результаты'); }
     finally { setBusy(false); }
   };
@@ -634,7 +634,7 @@ export default function Home() {
     }
     setBusy(true); setMessage('');
     try {
-      await request(`/submissions/${item.id}/grade`, { method: 'PATCH', body: JSON.stringify({ answers: values, feedback: submissionFeedback.trim() || undefined }) });
+      await request(`/submissions/${item.id}/grade`, { method: 'PATCH', body: JSON.stringify({ answers: values, feedback: submissionFeedback[item.id]?.trim() || (submissionFeedback[item.id] === '' ? '' : undefined) }) });
       const updated = await request(`/assignments/${selectedResults.assignment.id}/results`);
       setSelectedResults(updated);
       setManualGrades(old => Object.fromEntries(Object.entries(old).filter(([id]) => !answerRows.some((answer: any) => answer.id === id))));
@@ -1040,7 +1040,7 @@ export default function Home() {
                   </div>
                 </div>}
               </div>)}</div>
-              {(s.status === 'EXPIRED' || s.answers.some((a: any) => isManualQuestion(a.question.type))) && <div className="manualReviewFooter"><div><b>{t("Проверка работы")}</b><p>{t(s.answers.some((a: any) => isManualQuestion(a.question.type)) ? 'Введите баллы за каждый текстовый ответ, затем сохраните оценку.' : 'Работа отправлена после окончания времени. Проверьте ответы и подтвердите оценку.')}</p><label className="teacherCommentField">Общий комментарий к работе<textarea maxLength={10000} disabled={busy} value={submissionFeedback || s.feedback || ''} onChange={e => setSubmissionFeedback(e.target.value)} placeholder="Обратная связь для ученика" /></label></div><button className="primaryButton" disabled={busy} onClick={() => gradeSubmission(s)}>{busy ? t('Сохраняем…') : s.status === 'GRADED' ? t('Сохранить изменения') : t('Сохранить оценку')}</button></div>}
+              {(s.status === 'EXPIRED' || s.answers.some((a: any) => isManualQuestion(a.question.type))) && <div className="manualReviewFooter"><div><b>{t("Проверка работы")}</b><p>{t(s.answers.some((a: any) => isManualQuestion(a.question.type)) ? 'Введите баллы за каждый текстовый ответ, затем сохраните оценку.' : 'Работа отправлена после окончания времени. Проверьте ответы и подтвердите оценку.')}</p><label className="teacherCommentField">Общий комментарий к работе<textarea maxLength={10000} disabled={busy} value={submissionFeedback[s.id] ?? s.feedback ?? ''} onChange={e => setSubmissionFeedback(old => ({ ...old, [s.id]: e.target.value }))} placeholder="Обратная связь для ученика" /></label></div><button className="primaryButton" disabled={busy} onClick={() => gradeSubmission(s)}>{busy ? t('Сохраняем…') : s.status === 'GRADED' ? t('Сохранить изменения') : t('Сохранить оценку')}</button></div>}
               <div className="resultFoot"><span className={`status ${s.status === 'GRADED' ? '' : 'pending'}`}>{t(({ IN_PROGRESS: 'В процессе', SUBMITTED: 'Отправлено', UNDER_REVIEW: 'На проверке', GRADED: 'Проверено', EXPIRED: 'Время истекло', RETURNED: 'Возвращено' } as Record<string, string>)[s.status] || s.status)}</span>{s.feedback && <span className="muted">{s.feedback}</span>}</div>
             </article>)}
             {!selectedResults.submissions.length && <p className="emptyState">{t("Попыток пока нет.")}</p>}
