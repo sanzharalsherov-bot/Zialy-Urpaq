@@ -143,7 +143,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       include: {
         subject: true,
         questions: { orderBy: { position: 'asc' }, include: { options: { orderBy: { position: 'asc' } } } },
-        _count: { select: { submissions: true } },
+        _count: { select: { submissions: true, recipients: true } },
       },
     });
     if (!assignments.length) return assignments;
