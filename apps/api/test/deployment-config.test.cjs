@@ -135,15 +135,16 @@ test('plain HTTP is bound to localhost and never opened to the school LAN', () =
 
 test('production configuration refuses missing, short, or placeholder JWT secrets', () => {
   const base = { NODE_ENV: 'production', WEB_ORIGIN: 'https://192.168.1.20:8443' };
+  const strongSecret = 'k9!Qv2#Lm7@Rs4$Xp8^Ta1&Zc6*Bn3?Hd5';
   for (const JWT_SECRET of ['', 'short', 'replace-with-random-secret-at-least-32-bytes', 'your-secret-' + 'x'.repeat(40)]) {
     assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET }), /JWT_SECRET must be a unique random secret/u);
   }
   assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET: 'a'.repeat(32), WEB_ORIGIN: '' }), /WEB_ORIGIN must be a valid HTTPS origin/u);
   for (const WEB_ORIGIN of ['http://192.168.1.20:8443', '*', 'https://example.com/path', 'https://user:pass@example.com', 'https://example.com?x=1']) {
-    assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET: 'a'.repeat(48), WEB_ORIGIN }), /WEB_ORIGIN/u, WEB_ORIGIN);
+    assert.throws(() => validateProductionConfiguration({ ...base, JWT_SECRET: strongSecret, WEB_ORIGIN }), /WEB_ORIGIN/u, WEB_ORIGIN);
   }
-  assert.doesNotThrow(() => validateProductionConfiguration({ ...base, JWT_SECRET: 'r'.repeat(48) }));
-  assert.doesNotThrow(() => validateProductionConfiguration({ ...base, WEB_ORIGIN: 'https://school.example', JWT_SECRET: 'r'.repeat(48) }));
+  assert.doesNotThrow(() => validateProductionConfiguration({ ...base, JWT_SECRET: strongSecret }));
+  assert.doesNotThrow(() => validateProductionConfiguration({ ...base, WEB_ORIGIN: 'https://school.example', JWT_SECRET: strongSecret }));
   assert.doesNotThrow(() => validateProductionConfiguration({ NODE_ENV: 'test' }));
 });
 
