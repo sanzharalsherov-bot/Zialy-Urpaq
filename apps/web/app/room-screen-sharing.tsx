@@ -21,16 +21,32 @@ const copy = {
 } as const;
 const text = (language: Language, key: keyof typeof copy) => copy[key][language === 'kk' ? 1 : language === 'en' ? 2 : 0];
 
-export function StudentScreenShare({ roomId, sessionToken, language }: { roomId: string; sessionToken: string; language: Language }) {
+export function StudentScreenShare({ roomId, sessionToken, language, onWarning }: { roomId: string; sessionToken: string; language: Language; onWarning?: (data: { warnings: number; finished: boolean }) => void }) {
   const [sharing, setSharing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const roomRef = useRef<Room | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const endedReportedRef = useRef(false);
 
-  const stop = async () => {
+  const reportProctorEvent = async (eventType: 'SCREEN_SHARE_ENDED' | 'SCREEN_SHARE_RESTORED') => {
+    try {
+      const data = await requestJson(apiUrl, `/student/rooms/${roomId}/v2/proctor-events`, sessionToken, { method: 'POST', keepalive: true, body: JSON.stringify({ eventType }) });
+      if (eventType === 'SCREEN_SHARE_ENDED') onWarning?.({ warnings: data.warnings, finished: data.finished });
+      return data;
+    } catch {
+      setMessage(text(language, 'startError'));
+      return null;
+    }
+  };
+
+  const stop = async (reportViolation = false) => {
     const room = roomRef.current;
     const stream = streamRef.current;
+    if (reportViolation && room && !endedReportedRef.current) {
+      endedReportedRef.current = true;
+      await reportProctorEvent('SCREEN_SHARE_ENDED');
+    }
     roomRef.current = null;
     streamRef.current = null;
     try { if (room) await room.disconnect(); } catch { /* Disconnect cleanup is best effort. */ }
@@ -66,7 +82,9 @@ export function StudentScreenShare({ roomId, sessionToken, language }: { roomId:
       await room.localParticipant.publishTrack(video, { source: Track.Source.ScreenShare, name: 'screen' });
       roomRef.current = room;
       streamRef.current = captured;
-      video.addEventListener('ended', () => { void stop(); }, { once: true });
+      endedReportedRef.current = false;
+      await reportProctorEvent('SCREEN_SHARE_RESTORED');
+      video.addEventListener('ended', () => { void stop(true); }, { once: true });
       setSharing(true);
     } catch {
       captured?.getTracks().forEach(track => track.stop());
@@ -75,7 +93,7 @@ export function StudentScreenShare({ roomId, sessionToken, language }: { roomId:
     } finally { setBusy(false); }
   };
 
-  return <aside className="roomSharePanel"><div><b>{text(language, 'start')}</b><small>{text(language, 'consent')}</small>{message && <small role="status">{message}</small>}</div>{sharing ? <button type="button" className="secondaryButton" onClick={() => void stop()}>{text(language, 'stop')}</button> : <button type="button" className="secondaryButton" disabled={busy} onClick={() => void start()}>{busy ? text(language, 'loading') : text(language, 'start')}</button>}</aside>;
+  return <aside className="roomSharePanel"><div><b>{text(language, 'start')}</b><small>{text(language, 'consent')}</small>{message && <small role="status">{message}</small>}</div>{sharing ? <button type="button" className="secondaryButton" onClick={() => void stop(true)}>{text(language, 'stop')}</button> : <button type="button" className="secondaryButton" disabled={busy} onClick={() => void start()}>{busy ? text(language, 'loading') : text(language, 'start')}</button>}</aside>;
 }
 
 type SharedTrack = { participantId: string; name: string; track: RemoteTrack };
