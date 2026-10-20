@@ -99,7 +99,7 @@ test('legacy proctor events count continuous episodes once and preserve saved an
     },
     auditLog: { create: async () => {} },
   });
-  service.finalize = async (assignmentId, submissionId, dto, actor, finishReason) => {
+  service.finalizeInTransaction = async (_tx, assignmentId, submissionId, dto, actor, finishReason) => {
     finalized = { assignmentId, submissionId, dto, actor, finishReason };
     return { id: submissionId, status: 'GRADED', totalScore: 1 };
   };
