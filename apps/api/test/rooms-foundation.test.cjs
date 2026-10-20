@@ -291,7 +291,7 @@ test('manual screen-share stop counts once and restarting sharing permits a late
 test('overlapping visibility and screen-share violations are tracked as independent episodes', async () => {
   const db = fakeJoinPrisma(); const service = new RoomsService(db);
   const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
-  db.room.status = 'RUNNING'; db.room.startedAt = new Date();
+  db.room.status = 'RUNNING'; db.room.startedAt = new Date(); db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
   db.submissions[0].status = 'IN_PROGRESS';
   assert.equal((await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'VISIBILITY_HIDDEN' })).warnings, 1);
   assert.equal((await service.recordRoomProctorEvent('room-join', joined.sessionToken, { eventType: 'SCREEN_SHARE_ENDED' })).warnings, 2);
