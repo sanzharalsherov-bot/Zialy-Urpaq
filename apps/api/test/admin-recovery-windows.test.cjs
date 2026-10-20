@@ -17,9 +17,9 @@ test('admin recovery is a local GUI action protected by Windows elevation', () =
 test('admin recovery can only update an existing active ADMIN in the selected Compose project', () => {
   assert.match(recovery, /role !== "ADMIN"/u);
   assert.match(recovery, /!user\.isActive/u);
-  assert.match(recovery, /user\.passwordHash/u);
+  assert.match(recovery, /prisma\.user\.update/u);
   assert.match(recovery, /com\.docker\.compose\.project/u);
-  assert.match(recovery, /\\$projectName-api-1/u);
+  assert.ok(recovery.includes('const apiContainer = "$projectName-api-1";'));
   assert.match(recovery, /данные не удалялись/iu);
   assert.doesNotMatch(recovery, /DROP DATABASE|down -v|prisma\.user\.delete/iu);
 });
