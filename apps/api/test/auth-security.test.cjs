@@ -139,7 +139,7 @@ test('current database role and active flag override JWT claims; DB outages are 
 test('rotating student code revokes existing tokens and student sessions cannot claim admin role', async () => {
   const { createHash } = require('node:crypto');
   let settings = { studentAccessCodeHash: await bcrypt.hash(createHash('sha256').update('Code-123456').digest('base64'), 4) };
-  const prisma = { schoolSettings: { findUnique: async () => settings, upsert: async args => { settings = args.update; return settings; } } };
+  const prisma = { schoolSettings: { findUnique: async () => settings, upsert: async args => { settings = args.update; return settings; } }, user: { findMany: async () => [{ id: 'student-user-1', studentProfile: { id: 'student-profile-1' } }] }, studentProfile: { findUnique: async () => ({ id: 'student-profile-1', user: { isActive: true, role: 'STUDENT', firstName: 'Айша', lastName: 'Алиева' } }) } };
   const service = new AuthService(prisma, jwt);
   const guard = new JwtAuthGuard(jwt, prisma);
   const login = await service.loginSharedStudent({ accessCode: 'Code-123456', firstName: ' Айша ', lastName: 'Алиева' }, '192.0.2.1');
