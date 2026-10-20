@@ -64,7 +64,7 @@ test('school LAN has persistent HTTPS and WSS configuration', () => {
 });
 
 test('Windows installer avoids interactive certificate prompts and continues if trust-store writes are blocked', () => {
-  assert.match(installer, /X509Certificates\\.X509Store/u);
+  assert.match(installer, /X509Certificates\.X509Store/u);
   assert.match(installer, /StoreLocation\]::CurrentUser/u);
   assert.match(installer, /CERTIFICATE_TRUST_PENDING/u);
   assert.match(installer, /сервер и база уже запущены, установка продолжится/u);
