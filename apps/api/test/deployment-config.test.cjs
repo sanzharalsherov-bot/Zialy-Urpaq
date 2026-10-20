@@ -107,3 +107,16 @@ test('release smoke check refuses public hosts and non-HTTPS URLs before network
   assert.notEqual(embeddedCredentials.status, 0);
   assert.match(embeddedCredentials.stderr, /Credentials must not be embedded/u);
 });
+
+
+test('CI recovery drill restricts destructive restore operations to local test databases', () => {
+  const recovery = readFileSync(resolve(__dirname, './qa-postgres-recovery-ci.mjs'), 'utf8');
+  assert.match(recovery, /\['localhost', '127\.0\.0\.1'\]/u);
+  assert.match(recovery, /test\|audit/i);
+  assert.match(recovery, /CREATE DATABASE/u);
+  assert.match(recovery, /pg_dump/u);
+  assert.match(recovery, /pg_restore.*--exit-on-error/u);
+  assert.match(recovery, /DROP DATABASE IF EXISTS/u);
+  assert.match(recovery, /productionDatabasesTouched:\s*false/u);
+  assert.match(recovery, /Both CI databases must share the same local PostgreSQL service/u);
+});
