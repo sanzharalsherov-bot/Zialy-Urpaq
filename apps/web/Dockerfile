@@ -16,8 +16,10 @@ FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-COPY --from=build /app/apps/web/.next/standalone ./
-COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=build /app/apps/web/public ./apps/web/public
+COPY --chown=node:node --from=build /app/apps/web/.next/standalone ./
+COPY --chown=node:node --from=build /app/apps/web/.next/static ./apps/web/.next/static
+COPY --chown=node:node --from=build /app/apps/web/public ./apps/web/public
+# Next.js may write runtime image/cache files; keep those paths writable by node.
+USER node
 EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
