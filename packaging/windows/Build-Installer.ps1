@@ -15,14 +15,19 @@ try {
   Add-Type -AssemblyName System.IO.Compression
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   $excludedSegments = @('node_modules', '.next', 'dist', '.git', 'backups', 'output', 'tmp')
-  Get-ChildItem -LiteralPath $repoDir -Recurse -File -Force | ForEach-Object {
-    $relative = $_.FullName.Substring($repoDir.Length).TrimStart('\', '/')
+  $sourceFiles = Get-ChildItem -LiteralPath $repoDir -Recurse -File -Force
+  foreach ($sourceFile in $sourceFiles) {
+    $relative = $sourceFile.FullName.Substring($repoDir.Length).TrimStart('\', '/')
     $segments = $relative -split '[\\/]'
-    if ($segments | Where-Object { $excludedSegments -contains $_ }) { return }
-    if ($_.Name -like '.env*' -or $_.Name -like '*.bak' -or $_.Name -in @('school-crm-source.zip', 'reset-admin-password.js', 'README-AUTH-PATCH.md', 'ZailyUrpaqSetup.exe')) { return }
+    $excludedPath = $false
+    foreach ($segment in $segments) {
+      if ($excludedSegments -contains $segment) { $excludedPath = $true; break }
+    }
+    if ($excludedPath) { continue }
+    if ($sourceFile.Name -like '.env*' -or $sourceFile.Name -like '*.bak' -or $sourceFile.Name -in @('school-crm-source.zip', 'reset-admin-password.js', 'README-AUTH-PATCH.md', 'ZailyUrpaqSetup.exe')) { continue }
     $destination = Join-Path $payloadDir $relative
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
-    Copy-Item -LiteralPath $_.FullName -Destination $destination
+    Copy-Item -LiteralPath $sourceFile.FullName -Destination $destination
   }
   [IO.Compression.ZipFile]::CreateFromDirectory($payloadDir, $zipPath, [IO.Compression.CompressionLevel]::Optimal, $false)
 
