@@ -146,6 +146,21 @@ test('valid room token reconnects to its own attempt; unrelated token is denied'
   await assert.rejects(() => service.joinRoom('004271', 'Aruzhan', 'Sapar', 'x'.repeat(43)), error => error.getStatus() === 404);
 });
 
+test('valid room session can reconnect even when the device is throttled for wrong room codes', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const ip = '192.168.10.51'; const device = 'c'.repeat(64);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar', undefined, ip, device);
+  for (let i = 0; i < 3; i++) {
+    await assert.rejects(
+      () => service.joinRoom('999999', 'Aruzhan', 'Sapar', undefined, ip, device),
+      error => error.getStatus() === (i === 2 ? 429 : 404),
+    );
+  }
+  const resumed = await service.joinRoom('004271', 'Aruzhan', 'Sapar', joined.sessionToken, ip, device);
+  assert.equal(resumed.resumed, true);
+  assert.equal(resumed.attemptId, joined.attemptId);
+});
+
 test('student snapshot never exposes answer keys', async () => {
   const db = fakeJoinPrisma(); const service = new RoomsService(db);
   const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
