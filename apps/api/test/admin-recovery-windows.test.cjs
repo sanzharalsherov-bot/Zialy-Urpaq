@@ -19,7 +19,7 @@ test('admin recovery can only update an existing active ADMIN in the selected Co
   assert.match(recovery, /!user\.isActive/u);
   assert.match(recovery, /prisma\.user\.update/u);
   assert.match(recovery, /com\.docker\.compose\.project/u);
-  assert.ok(recovery.includes('const apiContainer = "$projectName-api-1";'));
+  assert.ok(recovery.includes('$apiContainer = "$projectName-api-1"'));
   assert.match(recovery, /данные не удалялись/iu);
   assert.doesNotMatch(recovery, /DROP DATABASE|down -v|prisma\.user\.delete/iu);
 });
