@@ -158,7 +158,7 @@ test('PostgreSQL: simultaneous attempts/submits/grades preserve limits, ownershi
   const resubmitted = await service.submit(manual.id, started.submission.id, {
     answers: manual.questions.map(q => ({ questionId: q.id, textValue: `Revised answer for ${q.prompt}` })),
   }, student);
-  assert.equal(resubmitted.status, 'SUBMITTED');
+  assert.equal(resubmitted.status, 'UNDER_REVIEW');
   assert.equal(resubmitted.totalScore, null, 'Manual work must return to the teacher queue after resubmission');
   const revisedRows = await prisma.answer.findMany({ where: { submissionId: started.submission.id } });
   assert.ok(revisedRows.every(answer => answer.textValue.startsWith('Revised answer for ')));
