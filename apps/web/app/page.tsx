@@ -144,6 +144,8 @@ export default function Home() {
   const [subjectName, setSubjectName] = useState('');
   const [description, setDescription] = useState('');
   const [timeLimit, setTimeLimit] = useState('');
+  const [availableFrom, setAvailableFrom] = useState('');
+  const [dueAt, setDueAt] = useState('');
   const [maxAttempts, setMaxAttempts] = useState('1');
   const [lobbyTarget, setLobbyTarget] = useState('');
   const [shuffleQuestions, setShuffleQuestions] = useState(true);
@@ -188,7 +190,7 @@ export default function Home() {
     setAccountPassword(''); setAccountEmail(''); setAccountFirstName(''); setAccountLastName('');
     setStudentAccessCodeInput(''); setStudentAccessCodeConfigured(false);
     setTitle(''); setSubjectName(''); setDescription(''); setQuestions([newQuestion()]);
-    setTimeLimit(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setRoomCode('');
+    setTimeLimit(''); setAvailableFrom(''); setDueAt(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setRoomCode('');
     setDashboard({ activeAssignments: 0, submissionsAwaitingReview: 0, gradedSubmissions: 0, totalSubmissions: 0 });
   };
   const request = async (path: string, options: RequestInit = {}) => {
@@ -369,9 +371,12 @@ export default function Home() {
       if (!subjectName.trim() || !title.trim() || questions.some(q => !q.prompt.trim())) throw new Error('Введите предмет, название и текст каждого вопроса');
       if (questions.some(q => !['SHORT_TEXT', 'LONG_TEXT'].includes(q.type) && !validPoints(Number(q.points), 0.01))) throw new Error('Укажите баллы от 0.01 до 10000, не более двух знаков после запятой');
       if (questions.some(q => q.type === 'NUMERIC' && (!Number.isFinite(q.correctValue) || Math.abs(q.correctValue) > 9999999999.9999 || Math.abs(q.correctValue * 10000 - Math.round(q.correctValue * 10000)) > 1e-7 || !Number.isFinite(q.tolerance) || q.tolerance < 0))) throw new Error('Проверьте правильный числовой ответ и допустимую погрешность');
+      if (availableFrom && dueAt && new Date(dueAt).getTime() <= new Date(availableFrom).getTime()) throw new Error('Срок сдачи должен быть позже даты открытия задания');
       const payload = {
         title: title.trim(), subjectName: subjectName.trim(), description: description.trim() || undefined,
         timeLimitMinutes: timeLimit ? Number(timeLimit) : undefined,
+        availableFrom: availableFrom ? new Date(availableFrom).toISOString() : undefined,
+        dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
         maxAttempts: Number(maxAttempts),
         lobbyTarget: lobbyTarget ? Number(lobbyTarget) : undefined,
         shuffleQuestions,
@@ -386,7 +391,7 @@ export default function Home() {
       };
       const created = await request('/assignments', { method: 'POST', body: JSON.stringify(payload) });
       createdId = created.id;
-      setTitle(''); setSubjectName(''); setDescription(''); setTimeLimit(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setQuestions([newQuestion()]);
+      setTitle(''); setSubjectName(''); setDescription(''); setTimeLimit(''); setAvailableFrom(''); setDueAt(''); setMaxAttempts('1'); setLobbyTarget(''); setShuffleQuestions(true); setShuffleOptions(true); setQuestions([newQuestion()]);
       setAssignments(old => [created, ...old]); setView('assignments');
       await request(`/assignments/${created.id}/publish`, { method: 'PATCH' });
       createdId = null;
@@ -929,7 +934,7 @@ export default function Home() {
             <button type="button" className="secondaryButton addQuestion" disabled={questions.length >= 200} onClick={() => setQuestions(old => [...old, newQuestion()])}>{t("+ Добавить вопрос")}</button>
             <div className="builderSectionHeading"><span>{t("Дополнительные настройки")}</span><small>{t("Ограничения применяются ко всему тесту.")}</small></div>
               <label>{t('Описание')}<textarea maxLength={5000} value={description} onChange={e => setDescription(e.target.value)} rows={2} placeholder={t('Необязательное описание для учеников')} /></label>
-            <div className="formGrid builderSettings"><label>{t("Лимит времени, минут")}<input type="number" min="1" max="600" value={timeLimit} onChange={e => setTimeLimit(e.target.value)} placeholder={t("Без лимита")} /></label><label>{t("Попытки на весь тест для одного ФИО")}<input type="number" min="1" max="100" value={maxAttempts} onChange={e => setMaxAttempts(e.target.value)} required /><small>{t("Считается каждое запущенное прохождение теста целиком.")}</small></label><label>{t('Размер лобби, учеников')}<input type="number" min="1" max="2000" value={lobbyTarget} onChange={e => setLobbyTarget(e.target.value)} placeholder={t('Без лобби')} /><small>{t('Пусто — тест запускается сразу после входа ученика.')}</small></label></div>
+            <div className="formGrid builderSettings"><label>{t("Открыть задание с") }<input type="datetime-local" value={availableFrom} onChange={e => setAvailableFrom(e.target.value)} /></label><label>{t("Срок сдачи") }<input type="datetime-local" value={dueAt} min={availableFrom || undefined} onChange={e => setDueAt(e.target.value)} /></label><label>{t("Лимит времени, минут")}<input type="number" min="1" max="600" value={timeLimit} onChange={e => setTimeLimit(e.target.value)} placeholder={t("Без лимита")} /></label><label>{t("Попытки на весь тест для одного ФИО")}<input type="number" min="1" max="100" value={maxAttempts} onChange={e => setMaxAttempts(e.target.value)} required /><small>{t("Считается каждое запущенное прохождение теста целиком.")}</small></label><label>{t('Размер лобби, учеников')}<input type="number" min="1" max="2000" value={lobbyTarget} onChange={e => setLobbyTarget(e.target.value)} placeholder={t('Без лобби')} /><small>{t('Пусто — тест запускается сразу после входа ученика.')}</small></label></div>
             <div className="builderToggles"><label><input type="checkbox" checked={shuffleQuestions} onChange={e => setShuffleQuestions(e.target.checked)} />{t('Перемешивать вопросы для каждого ученика')}</label><label><input type="checkbox" checked={shuffleOptions} onChange={e => setShuffleOptions(e.target.checked)} />{t('Перемешивать варианты ответов')}</label></div>
             <div className="formActions"><button type="button" className="secondaryButton" onClick={() => setView('assignments')}>{t('Отмена')}</button><button className="primaryButton" disabled={busy}>{busy ? t('Сохраняем…') : t('Сохранить и опубликовать')}</button></div>
           </form>
