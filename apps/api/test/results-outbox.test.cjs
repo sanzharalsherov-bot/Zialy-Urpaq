@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { deliverOutboxBatch, enqueueResultExport } = require('../dist/assignments/results-outbox.service');
+const { deliverOutboxBatch, enqueueResultExport, ResultsOutboxService } = require('../dist/assignments/results-outbox.service');
 
 test('completion snapshot is written transactionally with grade and answer details', async () => {
   let write;
@@ -51,4 +51,21 @@ test('failed external delivery leaves row retryable with backoff', async () => {
   assert.equal(updates.length, 1);
   assert.match(updates[0].sql, /"availableAt"/);
   assert.match(updates[0].sql, /"lastError"/);
+});
+
+
+test('health status reports pending exports without exposing database errors', async () => {
+  const service = Object.create(ResultsOutboxService.prototype);
+  service.prisma = { $queryRaw: async () => [{ count: 3n }] };
+  service.sink = { $queryRaw: async () => [{ '?column?': 1 }] };
+  assert.deepEqual(await service.healthStatus(), { status: 'pending', pendingCount: 3 });
+
+  service.prisma = { $queryRaw: async () => [{ count: 0n }] };
+  assert.deepEqual(await service.healthStatus(), { status: 'connected', pendingCount: 0 });
+
+  service.sink = { $queryRaw: async () => { throw new Error('secret connection string must not be returned'); } };
+  assert.deepEqual(await service.healthStatus(), { status: 'unavailable', pendingCount: 0 });
+
+  service.sink = undefined;
+  assert.deepEqual(await service.healthStatus(), { status: 'disabled', pendingCount: null });
 });
