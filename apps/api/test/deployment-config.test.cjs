@@ -83,7 +83,7 @@ test('release smoke check verifies private-LAN HTTPS without credentials or TLS 
   assert.match(smoke, /\/api\/health/u);
   assert.match(smoke, /resultsDelivery\.pendingCount === 0/u);
   assert.doesNotMatch(smoke, /rejectUnauthorized:\s*false/u);
-  assert.doesNotMatch(smoke, /Authorization:\s*['"`]/u);
+  assert.doesNotMatch(smoke, /Authorization:/u);
   assert.match(smoke, /mediaVerified:\s*false/u);
   assert.match(smoke, /backupRestoreVerified:\s*false/u);
 });
