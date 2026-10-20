@@ -490,7 +490,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       const finalized = await this.finalizeInTransaction(
         tx, submission.assignmentId, submissionId, { answers }, user, 'PROCTORING_VIOLATION_LIMIT',
       );
-      return { warnings, expired: true, finished: true, finishReason: finalized.finishReason ?? 'PROCTORING_VIOLATION_LIMIT', ...finalized };
+      return { warnings, expired: true, finished: true, ...finalized, finishReason: finalized.finishReason ?? 'PROCTORING_VIOLATION_LIMIT' };
     });
   }
 
