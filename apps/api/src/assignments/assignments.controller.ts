@@ -9,7 +9,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import {
-  CreateAssignmentDto, GradeSubmissionDto, ProctorEventDto, RoomJoinDto, SubmitAnswersDto,
+  CreateAssignmentDto, GradeSubmissionDto, ProctorEventDto, RoomJoinDto, SubmitAnswersDto, ReturnSubmissionDto,
 } from './assignments.dto';
 import { AssignmentsService } from './assignments.service';
 import { parseWordQuizTemplate } from './word-template.parser';
@@ -151,6 +151,18 @@ export class AssignmentsController {
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   results(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.assignments.results(id, user);
+  }
+
+  @Patch('submissions/:id/return')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  returnSubmission(@Param('id') id: string, @Body() dto: ReturnSubmissionDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.assignments.returnSubmission(id, dto.feedback, user);
+  }
+
+  @Post('student/submissions/:id/reopen')
+  reopenReturned(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.assignments.reopenReturned(id, user);
   }
 
   @Patch('submissions/:id/grade')
