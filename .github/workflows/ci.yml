@@ -169,7 +169,8 @@ jobs:
             $payloadMemory.Position = 0
             $archive = New-Object System.IO.Compression.ZipArchive($payloadMemory, [System.IO.Compression.ZipArchiveMode]::Read, $false)
             try {
-              $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\\', '/') })
+              $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
+              Write-Host "Payload archive entries: $($entries.Count); Prisma entries: $(($entries | Where-Object { $_ -like 'prisma*' }) -join ', ')"
               $requiredFiles = @(
                 'package.json',
                 'package-lock.json',
