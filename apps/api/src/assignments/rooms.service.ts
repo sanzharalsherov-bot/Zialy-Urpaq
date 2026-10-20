@@ -399,6 +399,12 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       const submission = await tx.submission.findFirst({ where: { roomId, participantId: participant.id }, orderBy: { attemptNo: 'desc' }, select: { id: true, status: true } });
       if (!submission || submission.status !== SubmissionStatus.IN_PROGRESS) throw new NotFoundException('Активная попытка не найдена');
       await tx.$queryRaw`SELECT "id" FROM "Submission" WHERE "id" = ${submission.id} FOR UPDATE`;
+      // The status read before the row lock can be stale if submit/finalization won the race.
+      const lockedSubmission = await tx.submission.findFirst({
+        where: { id: submission.id, roomId, participantId: participant.id, status: SubmissionStatus.IN_PROGRESS },
+        select: { id: true },
+      });
+      if (!lockedSubmission) throw new NotFoundException('Активная попытка не найдена');
       const room = await tx.testRoom.findUnique({ where: { id: roomId }, select: { status: true, startedAt: true, durationMinutes: true, snapshot: true } });
       if (!room || room.status !== RoomStatus.RUNNING) throw new BadRequestException('Тест уже завершён');
       const nowRows = await tx.$queryRaw<Array<{ now: Date }>>`SELECT NOW() AS now`;
@@ -514,6 +520,14 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       if (submission.status === SubmissionStatus.GRADED) return { submissionId: submission.id, alreadySubmitted: true };
       if (submission.status !== SubmissionStatus.IN_PROGRESS) throw new BadRequestException('Тест ещё не запущен');
       await tx.$queryRaw`SELECT "id" FROM "Submission" WHERE "id" = ${submission.id} FOR UPDATE`;
+      // A concurrent submit may have finalized this attempt while we waited for the row lock.
+      const lockedSubmission = await tx.submission.findFirst({
+        where: { id: submission.id, roomId, participantId: participant.id },
+        select: { id: true, status: true },
+      });
+      if (!lockedSubmission) throw new NotFoundException('Попытка не найдена');
+      if (lockedSubmission.status === SubmissionStatus.GRADED) return { submissionId: submission.id, alreadySubmitted: true };
+      if (lockedSubmission.status !== SubmissionStatus.IN_PROGRESS) throw new BadRequestException('Тест ещё не запущен');
       const room = await tx.testRoom.findUnique({ where: { id: roomId }, select: { status: true, startedAt: true, durationMinutes: true, snapshot: true } });
       if (!room || room.status !== RoomStatus.RUNNING) throw new BadRequestException('Тест уже завершён');
       const nowRows = await tx.$queryRaw<Array<{ now: Date }>>`SELECT NOW() AS now`;
