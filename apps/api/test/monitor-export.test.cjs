@@ -14,20 +14,21 @@ const status = code => e => e.getStatus?.() === code;
 
 function fixture(t) {
   const events = [];
+  let attemptStatus = 'IN_PROGRESS';
   const identity = createHash('sha256').update(`student:${student.sub}`).digest('hex');
   const prisma = {
     submission: {
       findFirst: async ({ where }) => {
         if (where.studentIdentityKey) return where.studentIdentityKey === identity ? { assignmentId: 'a', status: 'IN_PROGRESS' } : null;
         if (where.assignment?.creatorId && where.assignment.creatorId !== teacher.sub) return null;
-        return { id: 's', status: 'IN_PROGRESS', answers: [] };
+        return { id: 's', status: attemptStatus, studentFirstName: 'Aruzhan', studentLastName: 'Sapar', proctorWarnings: 0, answers: [{ questionId: 'q', jsonValue: 'correct-option', question: { prompt: '2+2?', options: [{ id: 'correct-option', text: '4' }] } }] };
       }, update: async () => {},
     },
     proctorEvent: { create: async ({ data }) => events.push(data) },
     question: { findFirst: async ({ where }) => where.id === 'q' ? { id: 'q' } : null, findUnique: async () => ({ prompt: 'Question' }) },
   };
   const service = new MonitorService(prisma); t.after(() => service.onModuleDestroy());
-  return { service, events };
+  return { service, events, setAttemptStatus: value => { attemptStatus = value; } };
 }
 test('screen streams require ownership and students cannot watch classmates', async t => {
   const { service } = fixture(t);
@@ -35,6 +36,14 @@ test('screen streams require ownership and students cannot watch classmates', as
   await assert.rejects(service.watch('s', student), status(403));
   await assert.rejects(service.watch('s', { ...teacher, sub: 'another-teacher' }), status(404));
   await assert.rejects(service.uploadFrame('s', 'data:image/jpeg;base64,/9j/2Q==', student), status(403));
+});
+test('live monitoring hides answers while active and exposes them only after completion', async t => {
+  const { service, setAttemptStatus } = fixture(t);
+  const live = await service.watch('s', teacher);
+  assert.deepEqual(live.answers, []);
+  setAttemptStatus('GRADED');
+  const completed = await service.watch('s', teacher);
+  assert.equal(completed.answers[0].jsonValue, 'correct-option');
 });
 test('frames expire, stop deletes them, invalid frames and flood are rejected', async t => {
   const { service, events } = fixture(t);

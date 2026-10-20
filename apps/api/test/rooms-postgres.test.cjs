@@ -80,6 +80,28 @@ test('PostgreSQL rooms: independent rooms, session isolation, snapshot redaction
   assert.equal((await service.getRoom(roomA.id, actor)).participants[0].attempt.proctorWarnings, 3);
   assert.equal((await service.joinRoom(roomA.joinCode, 'New', 'Name').catch(e => e.status)), 400);
   await assert.rejects(() => service.startRoom(roomA.id, { sub: other.id, role: 'TEACHER' }), error => error.getStatus() === 404);
+
+  // Real PostgreSQL race: the last two submissions finish at nearly the same time.
+  const raceOne = await service.joinRoom(roomB.joinCode, 'Race', 'One');
+  const raceTwo = await service.joinRoom(roomB.joinCode, 'Race', 'Two');
+  await service.startRoom(roomB.id, actor);
+  const raceResults = await Promise.allSettled([
+    service.saveRoomAnswers(roomB.id, raceOne.sessionToken, { answers: [{ questionId: fixtureQuestion.id, value: fixtureQuestion.options[0].id }] }),
+    service.submitRoom(roomB.id, raceOne.sessionToken),
+    service.submitRoom(roomB.id, raceTwo.sessionToken),
+  ]);
+  assert.equal(raceResults[1].status, 'fulfilled', 'first student submission should finish exactly once');
+  assert.equal(raceResults[2].status, 'fulfilled', 'second student submission should finish exactly once');
+  assert.equal((await prisma.testRoom.findUnique({ where: { id: roomB.id }, select: { status: true } })).status, 'FINISHED');
+  assert.equal(await prisma.submission.count({ where: { roomId: roomB.id, status: 'GRADED' } }), 2);
+  const raceAnswer = await prisma.answer.findFirst({ where: { submissionId: raceOne.attemptId, questionId: fixtureQuestion.id } });
+  assert.ok(raceAnswer, 'finalization must create a durable answer row even if autosave loses the race');
+  if (raceAnswer.jsonValue === fixtureQuestion.options[0].id) {
+    assert.equal(raceAnswer.isCorrect, true, 'an autosaved answer must be graded if it wins the lock');
+  } else {
+    assert.equal(raceAnswer.jsonValue, null, 'an autosave arriving after finalization must not mutate the submitted answer');
+    assert.equal(raceAnswer.isCorrect, false);
+  }
   assert.ok(rooms.length === 2);
 });
 

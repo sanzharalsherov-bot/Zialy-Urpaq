@@ -1,6 +1,6 @@
 import {
-  ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional,
-  IsString, IsObject, IsIn, Matches, Max, MaxLength, Min, MinLength, ValidateNested,
+  ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional,
+  IsString, IsObject, IsIn, IsDateString, Matches, Max, MaxLength, Min, MinLength, ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { QuestionType } from '@prisma/client';
@@ -46,6 +46,12 @@ export class CreateAssignmentDto {
   @IsOptional() @IsInt() @Min(1) @Max(600)
   timeLimitMinutes?: number;
 
+  @IsOptional() @IsDateString()
+  availableFrom?: string;
+
+  @IsOptional() @IsDateString()
+  dueAt?: string;
+
   @IsOptional() @IsInt() @Min(1) @Max(100)
   maxAttempts?: number;
 
@@ -60,6 +66,9 @@ export class CreateAssignmentDto {
 
   @IsOptional() @IsString() @MaxLength(100)
   classId?: string;
+
+  @IsOptional() @IsArray() @ArrayMaxSize(500) @ArrayUnique() @IsString({ each: true }) @MinLength(1, { each: true }) @MaxLength(100, { each: true })
+  studentIds?: string[];
 
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => CreateQuestionDto)
   questions!: CreateQuestionDto[];
@@ -109,6 +118,12 @@ export class GradeSubmissionDto {
   @IsArray() @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => GradeAnswerDto)
   answers!: GradeAnswerDto[];
 
+  @IsOptional() @IsString() @MaxLength(10000)
+  feedback?: string;
+}
+
+
+export class ReturnSubmissionDto {
   @IsOptional() @IsString() @MaxLength(10000)
   feedback?: string;
 }

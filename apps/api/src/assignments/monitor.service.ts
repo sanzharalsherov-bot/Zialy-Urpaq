@@ -81,6 +81,8 @@ export class MonitorService implements OnModuleDestroy {
     const state = active ? this.state(id) : undefined;
     if (state) state.watcherAt = Date.now();
     const currentQuestion = state?.questionId ? await this.prisma.question.findUnique({ where: { id: state.questionId }, select: { prompt: true } }) : null;
-    return { ...row, currentQuestion: currentQuestion?.prompt ?? null, visible: state?.visible ?? null, sharing: state?.sharing === true && Date.now() - state.seenAt < 20_000, frame: state?.sharing && Date.now() - state.frameAt < 10_000 ? state.frame ?? null : null, frameAt: state?.frameAt || null };
+    // Live monitoring may expose presence and the current question, never the student's chosen answers.
+    // Completed attempts use the dedicated results endpoint; keep answers empty while the attempt is active.
+    return { ...row, answers: active ? [] : row.answers, currentQuestion: currentQuestion?.prompt ?? null, visible: state?.visible ?? null, sharing: state?.sharing === true && Date.now() - state.seenAt < 20_000, frame: state?.sharing && Date.now() - state.frameAt < 10_000 ? state.frame ?? null : null, frameAt: state?.frameAt || null };
   }
 }

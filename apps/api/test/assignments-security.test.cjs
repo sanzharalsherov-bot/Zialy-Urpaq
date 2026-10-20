@@ -4,7 +4,7 @@ require('reflect-metadata');
 const { plainToInstance } = require('class-transformer');
 const { validate } = require('class-validator');
 const { AssignmentsService } = require('../dist/assignments/assignments.service');
-const { CreateAssignmentDto, SubmitAnswersDto, GradeSubmissionDto } = require('../dist/assignments/assignments.dto');
+const { CreateAssignmentDto, SubmitAnswersDto, GradeSubmissionDto, ReturnSubmissionDto } = require('../dist/assignments/assignments.dto');
 
 const admin = { sub: 'admin', role: 'ADMIN' };
 const teacher = { sub: 'teacher', role: 'TEACHER' };
@@ -28,14 +28,91 @@ function serviceWith(tx) {
 }
 const rejectedStatus = status => error => error?.getStatus?.() === status;
 
+test('returning and reopening work is role-, owner-, and state-restricted', async () => {
+  const queries = [];
+  const existing = { id: 's1', assignmentId: 'a1', status: 'UNDER_REVIEW', submittedAt: new Date(), assignment: assignment(), answers: [] };
+  const tx = {
+    submission: {
+      findFirst: async args => {
+        if (args.where.assignment) return existing;
+        if (args.where.studentIdentityKey) return { id: 's1' };
+        return null;
+      },
+      update: async ({ data }) => ({ ...existing, ...data }),
+    },
+    assignment: {},
+    auditLog: { create: async () => {} },
+    $queryRaw: async (strings, ...values) => { queries.push(strings.join('?')); return []; },
+  };
+  const { service } = serviceWith(tx);
+  const returned = await service.returnSubmission('s1', 'Please correct the written answer', teacher);
+  assert.equal(returned.status, 'RETURNED');
+  assert.equal(returned.feedback, 'Please correct the written answer');
+  assert.equal(returned.totalScore, null);
+  const reopened = await service.reopenReturned('s1', student);
+  assert.equal(reopened.submission.status, 'IN_PROGRESS');
+  assert.equal(reopened.assignment.id, 'a1');
+  assert.ok(queries.every(sql => sql.includes('FOR UPDATE')));
+  await assert.rejects(() => service.returnSubmission('s1', undefined, student), rejectedStatus(403));
+  await assert.rejects(() => service.reopenReturned('s1', teacher), rejectedStatus(403));
+});
+
+test('return feedback DTO rejects non-string or oversized feedback', async () => {
+  for (const input of [{ feedback: 12 }, { feedback: 'x'.repeat(10001) }]) {
+    assert.ok((await validate(plainToInstance(ReturnSubmissionDto, input))).length > 0);
+  }
+});
+
 test('student cannot call staff operations, and only admin may delete', async () => {
   const { service } = serviceWith({});
   for (const operation of [() => service.listForStaff(student), () => service.dashboard(student),
     () => service.create({}, student), () => service.publish('a1', student), () => service.results('a1', student),
-    () => service.grade('s1', { answers: [] }, student), () => service.delete('a1', student), () => service.delete('a1', teacher),
+    () => service.grade('s1', { answers: [] }, student), () => service.listStudentResults(admin), () => service.delete('a1', student), () => service.delete('a1', teacher),
     () => service.start('a1', teacher), () => service.listAvailable(admin)]) {
     await assert.rejects(operation, rejectedStatus(403));
   }
+});
+
+test('individual assignment visibility is limited to the selected student profile', async () => {
+  let captured;
+  const assignedStudent = { ...student, studentProfileId: 'profile-a' };
+  const { service } = serviceWith({
+    studentProfile: { findUnique: async ({ where }) => {
+      assert.equal(where.id, 'profile-a');
+      return { id: 'profile-a', classId: 'class-a' };
+    } },
+    assignment: { findMany: async args => { captured = args.where; return []; } },
+  });
+  await service.listAvailable(assignedStudent);
+  assert.ok(captured.OR.some(scope => scope.classId === null && scope.recipients?.none));
+  assert.ok(captured.OR.some(scope => scope.classId === 'class-a' && scope.recipients?.none));
+  assert.ok(captured.OR.some(scope => scope.classId === 'class-a' && scope.recipients?.some?.studentId === 'profile-a'));
+  assert.equal(captured.OR.some(scope => scope.classId === 'class-b'), false);
+});
+
+test('assignment creation rejects recipients outside the selected class', async () => {
+  let created = false;
+  const { service } = serviceWith({
+    schoolClass: { findUnique: async () => ({ id: 'class-a' }) },
+    studentProfile: { findMany: async () => [{ id: 'profile-a' }] },
+    subject: { upsert: async () => ({ id: 'subject-a' }) },
+    assignment: { create: async () => { created = true; return {}; } },
+  });
+  const dto = {
+    title: 'Individual work', subjectName: 'Math', classId: 'class-a', studentIds: ['profile-a', 'profile-b'],
+    questions: [{ type: 'SHORT_TEXT', prompt: 'Explain the method', points: 0 }],
+  };
+  await assert.rejects(() => service.create(dto, teacher), rejectedStatus(400));
+  assert.equal(created, false);
+});
+
+test('assignment DTO rejects duplicate student recipients', async () => {
+  const dto = plainToInstance(CreateAssignmentDto, {
+    title: 'Individual work', subjectName: 'Math', classId: 'class-a', studentIds: ['profile-a', 'profile-a'],
+    questions: [{ type: 'SHORT_TEXT', prompt: 'Explain the method' }],
+  });
+  const errors = await validate(dto);
+  assert.ok(errors.some(error => error.property === 'studentIds'));
 });
 
 test('teacher listing, results, publishing, and grading are restricted to the creator', async () => {
@@ -106,6 +183,20 @@ test('submitting another student attempt is rejected and ownership is checked in
   assert.equal(where.status, 'IN_PROGRESS');
   assert.match(where.studentIdentityKey, /^[a-f0-9]{64}$/);
   assert.match(queries[0].sql, /FOR UPDATE/);
+});
+
+test('teacher-authorized resubmission may be edited after the original due date', async () => {
+  const pastDue = { ...assignment([question('numeric', 'NUMERIC')]), dueAt: new Date(Date.now() - 60_000), timeLimitMinutes: null };
+  let saved = 0;
+  const makeService = finishReason => serviceWith({
+    submission: { findFirst: async () => submission({ status: 'IN_PROGRESS', finishReason, startedAt: new Date(), assignment: pastDue }) },
+    answer: { upsert: async () => { saved++; } },
+  }).service;
+  const payload = { answers: [{ questionId: 'numeric', numericValue: 42 }] };
+  const revised = await makeService('RESUBMISSION').saveAnswers('s1', payload, student);
+  assert.equal(revised.saved, 1);
+  await assert.rejects(() => makeService('STUDENT_SUBMITTED').saveAnswers('s1', payload, student), rejectedStatus(400));
+  assert.equal(saved, 1);
 });
 
 test('unknown questions, repeated questions and fabricated option IDs cannot be submitted', async () => {

@@ -40,7 +40,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       const rows = await this.prisma.$queryRaw<Array<{ id: string; assignmentId: string }>>`
         SELECT s.id, s."assignmentId" FROM "Submission" s JOIN "Assignment" a ON a.id = s."assignmentId"
         WHERE s.status = 'IN_PROGRESS'::"SubmissionStatus" AND
-          ((a."timeLimitMinutes" IS NOT NULL AND s."startedAt" + a."timeLimitMinutes" * INTERVAL '1 minute' <= NOW()) OR a."dueAt" <= NOW())
+          ((a."timeLimitMinutes" IS NOT NULL AND s."startedAt" + a."timeLimitMinutes" * INTERVAL '1 minute' <= NOW()) OR (a."dueAt" <= NOW() AND s."finishReason" IS DISTINCT FROM 'RESUBMISSION'))
         ORDER BY s."startedAt" LIMIT 100`;
       for (let offset = 0; offset < rows.length; offset += 5) await Promise.all(rows.slice(offset, offset + 5).map(row => this.finalize(row.assignmentId, row.id, { answers: [] }).catch(error => {
         if (!(error instanceof NotFoundException)) console.error('Deadline finalization failed; retrying on next sweep');
@@ -98,7 +98,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       jsonValue: answer.jsonValue,
     }));
     return {
-      submission: { id: submission.id, status: submission.status, attemptNo: submission.attemptNo, startedAt: submission.startedAt },
+      submission: { id: submission.id, status: submission.status, attemptNo: submission.attemptNo, startedAt: submission.startedAt, finishReason: submission.finishReason },
       assignment: {
         id: assignment.id, title: assignment.title, description: assignment.description,
         timeLimitMinutes: assignment.timeLimitMinutes, dueAt: assignment.dueAt, totalPoints: assignment.totalPoints,
@@ -122,9 +122,17 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
 
   private async studentScope(user: AuthenticatedUser): Promise<Prisma.AssignmentWhereInput> {
     const profile = user.studentProfileId
-      ? await this.prisma.studentProfile.findUnique({ where: { id: user.studentProfileId }, select: { classId: true } })
+      ? await this.prisma.studentProfile.findUnique({ where: { id: user.studentProfileId }, select: { id: true, classId: true } })
       : null;
-    return profile?.classId ? { OR: [{ classId: null }, { classId: profile.classId }] } : { classId: null };
+    const unassignedToIndividuals = { recipients: { none: {} } };
+    if (!profile?.classId) return { classId: null, ...unassignedToIndividuals };
+    return {
+      OR: [
+        { classId: null, ...unassignedToIndividuals },
+        { classId: profile.classId, ...unassignedToIndividuals },
+        { classId: profile.classId, recipients: { some: { studentId: profile.id } } },
+      ],
+    };
   }
 
   async listForStaff(user: AuthenticatedUser) {
@@ -135,7 +143,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       include: {
         subject: true,
         questions: { orderBy: { position: 'asc' }, include: { options: { orderBy: { position: 'asc' } } } },
-        _count: { select: { submissions: true } },
+        _count: { select: { submissions: true, recipients: true } },
       },
     });
     if (!assignments.length) return assignments;
@@ -171,6 +179,9 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
     this.requireStaff(user);
     const subjectName = dto.subjectName.trim();
     if (!subjectName || !dto.title.trim()) throw new BadRequestException('Введите предмет и название задания');
+    const availableFrom = dto.availableFrom ? new Date(dto.availableFrom) : null;
+    const dueAt = dto.dueAt ? new Date(dto.dueAt) : null;
+    if (availableFrom && dueAt && dueAt <= availableFrom) throw new BadRequestException('Срок сдачи должен быть позже даты открытия задания');
     const questions = dto.questions.map((q, position) => {
       if (!AUTO_GRADED.has(q.type) && !TEXT_QUESTIONS.has(q.type)) throw new BadRequestException('Этот тип вопроса пока не поддерживается');
       if (!q.prompt.trim() || q.options?.some(o => !o.text.trim())) throw new BadRequestException('Текст вопроса и вариантов не может быть пустым');
@@ -224,6 +235,16 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       if (dto.classId && !(await tx.schoolClass.findUnique({ where: { id: dto.classId }, select: { id: true } }))) {
         throw new BadRequestException('Класс не найден');
       }
+      if (dto.studentIds?.length) {
+        if (!dto.classId) throw new BadRequestException('Для назначения отдельным ученикам сначала выберите класс');
+        const recipients = await tx.studentProfile.findMany({
+          where: { id: { in: dto.studentIds }, classId: dto.classId, user: { isActive: true } },
+          select: { id: true },
+        });
+        if (recipients.length !== dto.studentIds.length) {
+          throw new BadRequestException('Список учеников изменился. Обновите список и выберите учеников только из выбранного класса');
+        }
+      }
       const subject = await tx.subject.upsert({ where: { name: subjectName }, update: {}, create: { name: subjectName } });
       return tx.assignment.create({
         data: {
@@ -233,6 +254,8 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
           subjectId: subject.id,
           classId: dto.classId || null,
           timeLimitMinutes: dto.timeLimitMinutes ?? null,
+          availableFrom,
+          dueAt,
           maxAttempts: dto.maxAttempts ?? 1,
           joinCode: randomBytes(6).toString('hex').toUpperCase(),
           lobbyTarget: dto.lobbyTarget ?? null,
@@ -240,6 +263,9 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
           shuffleOptions: dto.shuffleOptions ?? true,
           totalPoints,
           questions: { create: questions },
+          recipients: dto.studentIds?.length ? {
+            create: dto.studentIds.map(studentId => ({ studentId })),
+          } : undefined,
         },
         include: { subject: true, questions: { orderBy: { position: 'asc' }, include: { options: true } } },
       });
@@ -368,7 +394,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       });
       if (active?.status === SubmissionStatus.WAITING) await tx.submission.update({ where: { id: active.id }, data: { lastSeenAt: now } });
       await tx.roomJoinAttempt.deleteMany({ where: { ipKey } });
-      await tx.auditLog.create({ data: { actorId: user.studentProfileId ? user.sub : null, action: 'ROOM_JOINED', entityType: 'AssignmentRoom', entityId: assignment.id, metadata: { waiting: submission.status === SubmissionStatus.WAITING }, ipAddress: ipKey } });
+      await tx.auditLog.create({ data: { actorId: user.kind === 'shared_student' ? null : user.sub, action: 'ROOM_JOINED', entityType: 'AssignmentRoom', entityId: assignment.id, metadata: { waiting: submission.status === SubmissionStatus.WAITING }, ipAddress: ipKey } });
       return { submission, waitingCount: submission.status === SubmissionStatus.WAITING
         ? await tx.submission.count({ where: { assignmentId: assignment.id, status: SubmissionStatus.WAITING, lastSeenAt: { gte: new Date(now.getTime() - ROOM_HEARTBEAT_TTL_MS) } } }) : undefined };
     });
@@ -433,7 +459,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       if (!submission) throw new NotFoundException('Активная попытка не найдена');
       const elapsed = Date.now() - submission.startedAt.getTime();
       if ((submission.assignment.timeLimitMinutes !== null && elapsed >= submission.assignment.timeLimitMinutes * 60_000) ||
-          (submission.assignment.dueAt !== null && submission.assignment.dueAt.getTime() < Date.now())) {
+          (submission.finishReason !== 'RESUBMISSION' && submission.assignment.dueAt !== null && submission.assignment.dueAt.getTime() < Date.now())) {
         throw new BadRequestException('Время теста вышло');
       }
       if (new Set(dto.answers.map(answer => answer.questionId)).size !== dto.answers.length) throw new BadRequestException('Нельзя отправить несколько ответов на один вопрос');
@@ -455,26 +481,38 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
   async proctorEvent(submissionId: string, dto: { eventType: string }, user: AuthenticatedUser) {
     this.requireStudent(user);
     if (!['VISIBILITY_HIDDEN', 'PAGE_HIDDEN', 'VISIBILITY_RESTORED'].includes(dto.eventType)) throw new BadRequestException('Неизвестное событие наблюдения');
-    const outcome = await this.prisma.$transaction(async tx => {
+    return this.prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
-      const submission = await tx.submission.findFirst({ where: { id: submissionId, studentIdentityKey: this.studentIdentityKey(user), status: SubmissionStatus.IN_PROGRESS }, select: { id: true, assignmentId: true, proctorWarnings: true, answers: { select: { questionId: true, textValue: true, numericValue: true, jsonValue: true } } } });
+      const submission = await tx.submission.findFirst({
+        where: { id: submissionId, studentIdentityKey: this.studentIdentityKey(user), status: SubmissionStatus.IN_PROGRESS },
+        select: {
+          id: true, assignmentId: true, proctorWarnings: true,
+          answers: { select: { questionId: true, textValue: true, numericValue: true, jsonValue: true } },
+        },
+      });
       if (!submission) throw new NotFoundException('Активная попытка не найдена');
       const latest = await tx.proctorEvent.findFirst({ where: { submissionId }, orderBy: { createdAt: 'desc' }, select: { eventType: true } });
       if (dto.eventType === 'VISIBILITY_RESTORED') {
         if (latest && ['VISIBILITY_HIDDEN', 'PAGE_HIDDEN'].includes(latest.eventType)) await tx.proctorEvent.create({ data: { submissionId, eventType: dto.eventType } });
-        return { warnings: submission.proctorWarnings, finish: null };
+        return { warnings: submission.proctorWarnings, expired: false };
       }
-      if (latest && ['VISIBILITY_HIDDEN', 'PAGE_HIDDEN'].includes(latest.eventType)) return { warnings: submission.proctorWarnings, duplicate: true, finish: null };
+      if (latest && ['VISIBILITY_HIDDEN', 'PAGE_HIDDEN'].includes(latest.eventType)) return { warnings: submission.proctorWarnings, expired: false, duplicate: true };
       const warnings = submission.proctorWarnings + 1;
       await tx.proctorEvent.create({ data: { submissionId, eventType: dto.eventType, metadata: { warning: warnings } } });
       await tx.submission.update({ where: { id: submissionId }, data: { proctorWarnings: warnings } });
-      if (warnings < 3) return { warnings, finish: null };
+      if (warnings < 3) return { warnings, expired: false };
       await tx.auditLog.create({ data: { action: 'PROCTORING_VIOLATION_LIMIT', entityType: 'Submission', entityId: submissionId, metadata: { warnings } } });
-      return { warnings, finish: { assignmentId: submission.assignmentId, answers: submission.answers.map(answer => ({ questionId: answer.questionId, ...(answer.textValue === null ? {} : { textValue: answer.textValue }), ...(answer.numericValue === null ? {} : { numericValue: Number(answer.numericValue) }), ...(answer.jsonValue === null ? {} : { jsonValue: answer.jsonValue }) })) } };
+      const answers = submission.answers.map(answer => ({
+        questionId: answer.questionId,
+        ...(answer.textValue === null ? {} : { textValue: answer.textValue }),
+        ...(answer.numericValue === null ? {} : { numericValue: Number(answer.numericValue) }),
+        ...(answer.jsonValue === null ? {} : { jsonValue: answer.jsonValue }),
+      }));
+      const finalized = await this.finalizeInTransaction(
+        tx, submission.assignmentId, submissionId, { answers }, user, 'PROCTORING_VIOLATION_LIMIT',
+      );
+      return { warnings, expired: true, finished: true, ...finalized, finishReason: finalized.finishReason ?? 'PROCTORING_VIOLATION_LIMIT' };
     });
-    if (!outcome.finish) return { warnings: outcome.warnings, expired: false, duplicate: !!outcome.duplicate };
-    const finalized = await this.finalize(outcome.finish.assignmentId, submissionId, { answers: outcome.finish.answers }, user, 'PROCTORING_VIOLATION_LIMIT');
-    return { warnings: outcome.warnings, expired: true, finished: true, finishReason: 'PROCTORING_VIOLATION_LIMIT', ...finalized };
   }
 
   async submit(id: string, submissionId: string, dto: SubmitAnswersDto, user: AuthenticatedUser) {
@@ -485,74 +523,115 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
   private async finalize(id: string, submissionId: string, dto: SubmitAnswersDto, user?: AuthenticatedUser, finishReason?: string) {
     return this.prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
-      const submission = await tx.submission.findFirst({
-        where: {
-          id: submissionId, assignmentId: id,
-          ...(user ? { studentId: user.studentProfileId ?? null, studentIdentityKey: this.studentIdentityKey(user) } : {}), status: SubmissionStatus.IN_PROGRESS,
-        },
-        include: { assignment: { include: { questions: { include: { options: true } } } }, answers: true },
-      });
-      if (!submission) throw new NotFoundException('Активная попытка не найдена');
-      const elapsedMs = Date.now() - submission.startedAt.getTime();
-      const timedOut = (submission.assignment.timeLimitMinutes !== null &&
-        elapsedMs >= submission.assignment.timeLimitMinutes * 60_000) ||
-        (submission.assignment.dueAt !== null && submission.assignment.dueAt.getTime() < Date.now());
-      if (!user && !timedOut) throw new BadRequestException('Срок попытки ещё не истёк');
-      const questionMap = new Map(submission.assignment.questions.map(q => [q.id, q]));
-      const submittedAnswers = timedOut ? submission.answers.map(answer => ({
-        questionId: answer.questionId, textValue: answer.textValue ?? undefined,
-        numericValue: answer.numericValue === null ? undefined : Number(answer.numericValue),
-        jsonValue: answer.jsonValue ?? undefined,
-      })) : dto.answers;
-      const inputMap = new Map(submittedAnswers.map(a => [a.questionId, a]));
-      if (inputMap.size !== submittedAnswers.length) throw new BadRequestException('Нельзя отправить несколько ответов на один вопрос');
-      for (const answer of submittedAnswers) {
-        if (!questionMap.has(answer.questionId)) throw new BadRequestException('Ответ содержит неизвестный вопрос');
-      }
-
-      let autoScore = 0;
-      let allAuto = true;
-      const answerRows = submission.assignment.questions.map(question => {
-        const input = inputMap.get(question.id);
-        this.validateAnswer(question, input);
-        let isCorrect: boolean | null = null;
-        let awardedPoints: number | null = null;
-        if (AUTO_GRADED.has(question.type)) {
-          const points = Number(question.points);
-          isCorrect = this.isCorrect(question.type, question.options, question.config, input);
-          awardedPoints = isCorrect ? points : 0;
-          autoScore += awardedPoints;
-        } else {
-          allAuto = false;
-        }
-        return {
-          questionId: question.id,
-          textValue: input?.textValue ?? null,
-          numericValue: input?.numericValue ?? null,
-          jsonValue: input?.jsonValue as Prisma.InputJsonValue | undefined,
-          isCorrect,
-          awardedPoints,
-        };
-      });
-      await tx.answer.deleteMany({ where: { submissionId: submission.id } });
-      await tx.answer.createMany({ data: answerRows.map(row => ({ ...row, submissionId: submission.id })) });
-      const saved = await tx.submission.update({
-        where: { id: submission.id },
-        data: {
-          status: timedOut ? SubmissionStatus.EXPIRED : allAuto ? SubmissionStatus.GRADED : SubmissionStatus.UNDER_REVIEW,
-          submittedAt: timedOut ? new Date(Math.min(
-            submission.assignment.timeLimitMinutes !== null ? submission.startedAt.getTime() + submission.assignment.timeLimitMinutes * 60000 : Infinity,
-            submission.assignment.dueAt?.getTime() ?? Infinity,
-          )) : new Date(),
-          totalScore: allAuto ? roundedScore(autoScore) : null,
-          gradedAt: allAuto ? new Date() : null,
-          finishReason: finishReason ?? (timedOut ? 'TIME_LIMIT' : 'STUDENT_SUBMITTED'),
-        },
-        select: { id: true, status: true, submittedAt: true, totalScore: true, attemptNo: true },
-      });
-      await enqueueResultExport(tx, submission.id);
-      return { ...saved, timedOut, message: timedOut ? 'Время вышло. Ответы сохранены, но попытка отмечена как просроченная.' : allAuto ? 'Ответы проверены автоматически.' : 'Ответы отправлены преподавателю на проверку.' };
+      return this.finalizeInTransaction(tx, id, submissionId, dto, user, finishReason);
     });
+  }
+
+  private async finalizeInTransaction(
+    tx: Prisma.TransactionClient,
+    id: string,
+    submissionId: string,
+    dto: SubmitAnswersDto,
+    user?: AuthenticatedUser,
+    finishReason?: string,
+  ) {
+    const submission = await tx.submission.findFirst({
+      where: {
+        id: submissionId, assignmentId: id,
+        ...(user ? { studentId: user.studentProfileId ?? null, studentIdentityKey: this.studentIdentityKey(user) } : {}), status: SubmissionStatus.IN_PROGRESS,
+      },
+      include: { assignment: { include: { questions: { include: { options: true } } } }, answers: true },
+    });
+    if (!submission) throw new NotFoundException('Активная попытка не найдена');
+    const elapsedMs = Date.now() - submission.startedAt.getTime();
+    const timedOut = (submission.assignment.timeLimitMinutes !== null &&
+      elapsedMs >= submission.assignment.timeLimitMinutes * 60_000) ||
+      (submission.finishReason !== 'RESUBMISSION' && submission.assignment.dueAt !== null && submission.assignment.dueAt.getTime() < Date.now());
+    if (!user && !timedOut) throw new BadRequestException('Срок попытки ещё не истёк');
+    const questionMap = new Map(submission.assignment.questions.map(q => [q.id, q]));
+    const submittedAnswers = timedOut ? submission.answers.map(answer => ({
+      questionId: answer.questionId, textValue: answer.textValue ?? undefined,
+      numericValue: answer.numericValue === null ? undefined : Number(answer.numericValue),
+      jsonValue: answer.jsonValue ?? undefined,
+    })) : dto.answers;
+    const inputMap = new Map(submittedAnswers.map(a => [a.questionId, a]));
+    if (inputMap.size !== submittedAnswers.length) throw new BadRequestException('Нельзя отправить несколько ответов на один вопрос');
+    for (const answer of submittedAnswers) {
+      if (!questionMap.has(answer.questionId)) throw new BadRequestException('Ответ содержит неизвестный вопрос');
+    }
+
+    let autoScore = 0;
+    let allAuto = true;
+    const answerRows = submission.assignment.questions.map(question => {
+      const input = inputMap.get(question.id);
+      this.validateAnswer(question, input);
+      let isCorrect: boolean | null = null;
+      let awardedPoints: number | null = null;
+      if (AUTO_GRADED.has(question.type)) {
+        const points = Number(question.points);
+        isCorrect = this.isCorrect(question.type, question.options, question.config, input);
+        awardedPoints = isCorrect ? points : 0;
+        autoScore += awardedPoints;
+      } else {
+        allAuto = false;
+      }
+      return {
+        questionId: question.id,
+        textValue: input?.textValue ?? null,
+        numericValue: input?.numericValue ?? null,
+        jsonValue: input?.jsonValue as Prisma.InputJsonValue | undefined,
+        isCorrect,
+        awardedPoints,
+      };
+    });
+    await tx.answer.deleteMany({ where: { submissionId: submission.id } });
+    await tx.answer.createMany({ data: answerRows.map(row => ({ ...row, submissionId: submission.id })) });
+    const saved = await tx.submission.update({
+      where: { id: submission.id },
+      data: {
+        status: timedOut ? SubmissionStatus.EXPIRED : allAuto ? SubmissionStatus.GRADED : SubmissionStatus.UNDER_REVIEW,
+        submittedAt: timedOut ? new Date(Math.min(
+          submission.assignment.timeLimitMinutes !== null ? submission.startedAt.getTime() + submission.assignment.timeLimitMinutes * 60000 : Infinity,
+          submission.finishReason === 'RESUBMISSION' ? Infinity : submission.assignment.dueAt?.getTime() ?? Infinity,
+        )) : new Date(),
+        totalScore: allAuto ? roundedScore(autoScore) : null,
+        gradedAt: allAuto ? new Date() : null,
+        finishReason: timedOut ? 'TIME_LIMIT' : finishReason ?? 'STUDENT_SUBMITTED',
+      },
+      select: { id: true, status: true, submittedAt: true, totalScore: true, attemptNo: true, finishReason: true },
+    });
+    await enqueueResultExport(tx, submission.id);
+    return { ...saved, timedOut, message: timedOut ? 'Время вышло. Ответы сохранены, но попытка отмечена как просроченная.' : allAuto ? 'Ответы проверены автоматически.' : 'Ответы отправлены преподавателю на проверку.' };
+  }
+
+  async listStudentResults(user: AuthenticatedUser) {
+    this.requireStudent(user);
+    const rows = await this.prisma.submission.findMany({
+      where: {
+        studentIdentityKey: this.studentIdentityKey(user),
+        status: { notIn: [SubmissionStatus.WAITING, SubmissionStatus.IN_PROGRESS] },
+      },
+      orderBy: [{ submittedAt: 'desc' }, { startedAt: 'desc' }],
+      take: 100,
+      select: {
+        id: true, status: true, totalScore: true, submittedAt: true, startedAt: true,
+        feedback: true, finishReason: true, attemptNo: true,
+        assignment: { select: { id: true, title: true, subject: { select: { name: true } } } },
+      },
+    });
+    return rows.map(row => ({
+      submissionId: row.id,
+      assignmentId: row.assignment.id,
+      assignmentTitle: row.assignment.title,
+      subjectName: row.assignment.subject.name,
+      status: row.status,
+      score: row.totalScore === null ? null : Number(row.totalScore),
+      submittedAt: row.submittedAt,
+      startedAt: row.startedAt,
+      feedback: row.feedback,
+      finishReason: row.finishReason,
+      attemptNo: row.attemptNo,
+    }));
   }
 
   async studentResult(submissionId: string, user: AuthenticatedUser) {
@@ -560,7 +639,24 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
     const identityKey = this.studentIdentityKey(user);
     const submission = await this.prisma.submission.findFirst({
       where: { id: submissionId, studentIdentityKey: identityKey },
-      select: { id: true, assignmentId: true, status: true, totalScore: true, submittedAt: true, startedAt: true, finishReason: true, assignment: { select: { title: true } } },
+      select: {
+        id: true, assignmentId: true, status: true, totalScore: true, submittedAt: true, startedAt: true,
+        finishReason: true, feedback: true,
+        assignment: { select: { title: true } },
+        answers: {
+          orderBy: { question: { position: 'asc' } },
+          select: {
+            textValue: true, numericValue: true, jsonValue: true, awardedPoints: true,
+            teacherComment: true, isCorrect: true,
+            question: {
+              select: {
+                id: true, prompt: true, type: true, points: true,
+                options: { orderBy: { position: 'asc' }, select: { id: true, text: true, position: true } },
+              },
+            },
+          },
+        },
+      },
     });
     if (!submission || submission.status === SubmissionStatus.WAITING || submission.status === SubmissionStatus.IN_PROGRESS) throw new NotFoundException('Завершённый результат не найден');
     type Leader = { id: string; rank: bigint; firstName: string; lastName: string; score: number; durationMs: number; correctCount: number };
@@ -590,6 +686,23 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       finishReason: submission.finishReason,
       score: submission.totalScore === null ? null : Number(submission.totalScore),
       submittedAt: submission.submittedAt,
+      feedback: submission.feedback,
+      answers: submission.answers.map(answer => ({
+        question: {
+          id: answer.question.id,
+          prompt: answer.question.prompt,
+          type: answer.question.type,
+          points: Number(answer.question.points),
+          // Student review may show option labels, but never correctness flags or answer-key config.
+          options: answer.question.options.map(option => ({ id: option.id, text: option.text })),
+        },
+        textValue: answer.textValue,
+        numericValue: answer.numericValue === null ? null : Number(answer.numericValue),
+        jsonValue: answer.jsonValue,
+        awardedPoints: answer.awardedPoints === null ? null : Number(answer.awardedPoints),
+        teacherComment: answer.teacherComment,
+        isCorrect: answer.isCorrect,
+      })),
       rank: mine ? Number(mine.rank) : null,
       correctCount: mine?.correctCount ?? 0,
       durationMs: mine?.durationMs ?? Math.max(0, (submission.submittedAt?.getTime() ?? Date.now()) - submission.startedAt.getTime()),
@@ -664,6 +777,51 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       },
     });
     return { assignment, submissions };
+  }
+
+  async returnSubmission(submissionId: string, feedback: string | undefined, user: AuthenticatedUser) {
+    this.requireStaff(user);
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
+      const submission = await tx.submission.findFirst({ where: { id: submissionId, assignment: this.staffScope(user) }, select: { id: true, status: true, assignmentId: true } });
+      if (!submission) throw new NotFoundException('Работа не найдена');
+      const returnableStatuses: SubmissionStatus[] = [SubmissionStatus.UNDER_REVIEW, SubmissionStatus.GRADED, SubmissionStatus.EXPIRED];
+      if (!returnableStatuses.includes(submission.status)) {
+        throw new BadRequestException('Можно вернуть только отправленную на проверку или проверенную работу');
+      }
+      const updated = await tx.submission.update({ where: { id: submissionId }, data: {
+        status: SubmissionStatus.RETURNED, feedback: feedback?.trim() || 'Исправьте работу и отправьте повторно',
+        totalScore: null, gradedAt: null, reviewerId: user.sub,
+      }});
+      await tx.auditLog.create({ data: { actorId: user.sub, action: 'SUBMISSION_RETURNED', entityType: 'Submission', entityId: submissionId, metadata: { assignmentId: submission.assignmentId } } });
+      await enqueueResultExport(tx, submissionId);
+      return updated;
+    });
+  }
+
+  async reopenReturned(submissionId: string, user: AuthenticatedUser) {
+    this.requireStudent(user);
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
+      const current = await tx.submission.findFirst({ where: { id: submissionId, studentIdentityKey: this.studentIdentityKey(user), status: SubmissionStatus.RETURNED }, select: { id: true } });
+      if (!current) throw new NotFoundException('Работа не найдена или не возвращена на исправление');
+      const submission = await tx.submission.update({
+        where: { id: submissionId },
+        data: { status: SubmissionStatus.IN_PROGRESS, startedAt: new Date(), submittedAt: null, totalScore: null, gradedAt: null, finishReason: 'RESUBMISSION' },
+        include: {
+          assignment: {
+            include: {
+              questions: {
+                orderBy: { position: 'asc' },
+                include: { options: { orderBy: { position: 'asc' } } },
+              },
+            },
+          },
+          answers: true,
+        },
+      });
+      return this.studentAssignmentPayload(submission.assignment, submission);
+    });
   }
 
   async grade(submissionId: string, dto: GradeSubmissionDto, user: AuthenticatedUser) {

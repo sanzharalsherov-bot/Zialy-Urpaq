@@ -15,5 +15,6 @@ import { RoomSessionGuard } from './room-session.guard';
   imports: [AuthModule],
   controllers: [AssignmentsController, MonitorController, RoomsController],
   providers: [AssignmentsService, MonitorService, ResultsExportService, ResultsOutboxService, LiveKitService, RoomsService, RoomSessionGuard],
+  exports: [ResultsOutboxService],
 })
 export class AssignmentsModule {}

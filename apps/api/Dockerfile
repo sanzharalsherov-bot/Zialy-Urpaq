@@ -16,5 +16,7 @@ RUN npx prisma generate --schema prisma/schema.prisma \
     && npm run build --workspace @school-crm/api
 
 ENV NODE_ENV=production
+# Run the API and database migrations without root privileges.
+USER node
 EXPOSE 4000
 CMD ["sh", "-c", "npx prisma migrate deploy --schema prisma/schema.prisma && node apps/api/dist/main.js"]

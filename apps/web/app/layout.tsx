@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Zaily Urpaq мектебі | Учебная платформа',
+  title: 'Zaily Urpaq МЕКТЕБІ | Учебная платформа',
   description: 'Учебная платформа школы Zaily Urpaq: задания, ответы и результаты обучения',
 };
 

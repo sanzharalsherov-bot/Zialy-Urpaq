@@ -6,15 +6,14 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import { validateProductionConfiguration } from './config/production-config';
 
 dotenv.config({
   path: path.resolve(__dirname, '../../../.env'),
 });
 
 export function configureApplication(app: NestExpressApplication) {
-  if (process.env.NODE_ENV === 'production' && !process.env.WEB_ORIGIN) {
-    throw new Error('WEB_ORIGIN must be configured in production');
-  }
+  validateProductionConfiguration();
   app.setGlobalPrefix('api');
   const server = app.getHttpAdapter().getInstance();
   server.disable('x-powered-by');

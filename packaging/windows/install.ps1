@@ -59,7 +59,7 @@ function Invoke-DockerCommand([string[]]$Arguments) {
   return [pscustomobject]@{ Output = $output; ExitCode = $exitCode }
 }
 
-function Set-DatabaseRolePassword([string]$ContainerName, [string]$DesiredPassword) {
+function Set-DatabaseRolePassword([string]$ContainerName, [string]$DatabaseName, [string]$DesiredPassword) {
   # The official PostgreSQL image allows local socket access inside the
   # container. Feed SQL over stdin so this generated secret is not added to
   # Docker's process command line or installer logs.
@@ -67,7 +67,7 @@ function Set-DatabaseRolePassword([string]$ContainerName, [string]$DesiredPasswo
   $sql = "ALTER ROLE schoolcrm WITH PASSWORD '$escapedPassword';"
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo
   $startInfo.FileName = $dockerCli
-  $startInfo.Arguments = "exec -i -u postgres $ContainerName psql -v ON_ERROR_STOP=1 -U schoolcrm -d schoolcrm"
+  $startInfo.Arguments = "exec -i -u postgres $ContainerName psql -v ON_ERROR_STOP=1 -U schoolcrm -d $DatabaseName"
   $startInfo.UseShellExecute = $false
   $startInfo.CreateNoWindow = $true
   $startInfo.RedirectStandardInput = $true
@@ -258,6 +258,25 @@ $bootstrapKey = ($bootstrapLine -split '=', 2)[1].Trim().Trim('"')
 $userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 & icacls.exe $envFile /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' "*$($userSid):F" *> $null
 
+function Assert-LiveKitPortsAvailable {
+  # A different Docker Compose project may already publish LiveKit's fixed host
+  # ports. Detect that before building/starting the stack, without stopping or
+  # deleting any existing containers or their persistent data.
+  foreach ($port in @(7881, 7882)) {
+    $containersProbe = Invoke-DockerProbe -DockerExe $dockerCli -Arguments @('ps', '--filter', "publish=$port", '--format', '{{.Names}}')
+    if ($containersProbe.ExitCode -ne 0) { throw 'Не удалось проверить занятость портов Docker. Перезапустите Docker Desktop и повторите установку.' }
+    foreach ($containerName in @($containersProbe.Output | Where-Object { $_ })) {
+      $ownerProbe = Invoke-DockerProbe -DockerExe $dockerCli -Arguments @('inspect', '--format', '{{ index .Config.Labels "com.docker.compose.project" }}', [string]$containerName)
+      $ownerProject = [string]($ownerProbe.Output | Select-Object -First 1)
+      if ($ownerProbe.ExitCode -eq 0 -and $ownerProject -and $ownerProject -ne $composeProjectName) {
+        throw "Порт LiveKit $port уже занят контейнером '$containerName' из Docker-проекта '$ownerProject'. Установка остановлена до запуска остальных сервисов. Откройте Docker Desktop, найдите старый/дублирующий проект и штатно остановите его, если он больше не нужен. Не удаляйте volumes и не выполняйте docker compose down -v: там могут храниться данные школы."
+      }
+    }
+  }
+}
+
+Assert-LiveKitPortsAvailable
+
 Write-Host ''
 Write-Host 'Собираю и запускаю приложение. При первом запуске Docker скачает зависимости; это может занять несколько минут.' -ForegroundColor Cyan
 Write-InstallStatus 'Скачиваю компоненты и запускаю платформу. Это может занять несколько минут…'
@@ -271,7 +290,7 @@ $databaseReady = $false
 $databaseError = ''
 for ($attempt = 0; $attempt -lt 30; $attempt++) {
   try {
-    Set-DatabaseRolePassword -ContainerName $postgresContainer -DesiredPassword $dbPassword
+    Set-DatabaseRolePassword -ContainerName $postgresContainer -DatabaseName 'schoolcrm' -DesiredPassword $dbPassword
     $databaseReady = $true
     break
   } catch {
@@ -283,6 +302,25 @@ if (-not $databaseReady) { throw "PostgreSQL запустился, но API не
 
 $stackStart = Invoke-DockerCommand @('compose', '--profile', 'media', '-p', $composeProjectName, '-f', $composePath, 'up', '-d', '--build')
 if ($stackStart.ExitCode -ne 0) { throw "Сборка или запуск завершились ошибкой. Диагностика: docker compose -p $composeProjectName -f compose.production.yaml logs." }
+
+# The results database has its own persistent volume. Keep its role password
+# synchronized as well when an existing installation is updated/reconfigured.
+$resultsContainer = "$composeProjectName-results-postgres-1"
+$resultsDatabaseReady = $false
+$resultsDatabaseError = ''
+for ($attempt = 0; $attempt -lt 30; $attempt++) {
+  try {
+    Set-DatabaseRolePassword -ContainerName $resultsContainer -DatabaseName 'schoolresults' -DesiredPassword $dbPassword
+    $resultsDatabaseReady = $true
+    break
+  } catch {
+    $resultsDatabaseError = [string]$_.Exception.Message
+    Start-Sleep -Seconds 2
+  }
+}
+if (-not $resultsDatabaseReady) {
+  throw "База результатов запустилась, но пароль не удалось синхронизировать. $resultsDatabaseError Данные в томе сохранены."
+}
 
 if (-not (Test-Path $setupComplete)) {
   Write-InstallStatus 'Ожидаю готовности платформы…'
@@ -302,7 +340,8 @@ if (-not (Test-Path $setupComplete)) {
   if (-not [int]::TryParse($userCountText.Trim(), [ref]$existingUserCount)) { throw 'База вернула некорректный результат проверки аккаунтов.' }
 
   if ($existingUserCount -gt 0) {
-    Write-Host "В базе уже есть аккаунты ($existingUserCount). Сохраняю их без изменений." -ForegroundColor Yellow
+    Write-Host "В базе уже есть аккаунты ($existingUserCount). Сохраняю их без изменений; пароль из этой формы не применялся." -ForegroundColor Yellow
+    [Console]::Out.WriteLine('ADMIN_CREDENTIALS_NOT_CHANGED')
   } else {
     if ($password.Length -lt 12) { throw 'Пароль должен содержать не менее 12 символов. Повторно запустите установщик; запущенные данные сохранятся.' }
     if (-not $bootstrapKey) { throw 'Первый администратор ещё не создан, а ключ настройки уже отключён. Данные сохранены; обратитесь к администратору платформы.' }
@@ -336,10 +375,55 @@ $certificateExport = Invoke-DockerCommand @('cp', "${composeProjectName}-caddy-1
 if ($certificateExport.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $lanCertificateFile)) {
   throw 'Не удалось сохранить корневой сертификат локального HTTPS. Проверьте логи Caddy и повторите установку.'
 }
-Import-Certificate -FilePath $lanCertificateFile -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
+# Import the Caddy local root without launching certificate/UI prompts from the hidden
+# non-interactive PowerShell worker. If policy blocks trust-store writes, keep the
+# platform running and report exactly how to trust the saved public root certificate.
+$certificateTrustPending = $false
+$rootCertificate = $null
+$rootStore = $null
 try {
+  $rootCertificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList $lanCertificateFile
+  $caExtension = $rootCertificate.Extensions | Where-Object { $_.Oid.Value -eq '2.5.29.19' } | Select-Object -First 1
+  if (-not $caExtension) { throw 'The saved certificate has no CA basic-constraints extension.' }
+  $basicConstraints = New-Object System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension -ArgumentList $caExtension, $false
+  if (-not $basicConstraints.CertificateAuthority) { throw 'The saved certificate is not a CA certificate.' }
+
+  $rootStore = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+    [System.Security.Cryptography.X509Certificates.StoreName]::Root,
+    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+  )
+  $rootStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+  $alreadyTrusted = $false
+  foreach ($storedCertificate in $rootStore.Certificates) {
+    if ($storedCertificate.Thumbprint -eq $rootCertificate.Thumbprint) {
+      $alreadyTrusted = $true
+      break
+    }
+  }
+  if (-not $alreadyTrusted) { $rootStore.Add($rootCertificate) }
+  $trustVerified = $false
+  foreach ($storedCertificate in $rootStore.Certificates) {
+    if ($storedCertificate.Thumbprint -eq $rootCertificate.Thumbprint) {
+      $trustVerified = $true
+      break
+    }
+  }
+  if (-not $trustVerified) { throw 'Windows did not confirm the root certificate in the CurrentUser Root store.' }
+  Write-Host 'Корневой HTTPS-сертификат добавлен в доверенные сертификаты текущего пользователя Windows.' -ForegroundColor Green
+} catch {
+  $certificateTrustPending = $true
+  Write-Host 'CERTIFICATE_TRUST_PENDING'
+  Write-Host 'Предупреждение: Windows не разрешила автоматически добавить корневой HTTPS-сертификат. Сервер и база уже запущены, установка продолжится.' -ForegroundColor Yellow
+  Write-Host "Файл сертификата сохранён: $lanCertificateFile" -ForegroundColor Yellow
+  Write-Host 'Для доверенного HTTPS попросите администратора установить этот сертификат в хранилище «Доверенные корневые центры сертификации» текущего пользователя Windows. На других школьных устройствах доверие также настраивается отдельно.' -ForegroundColor Yellow
+} finally {
+  if ($rootStore) { try { $rootStore.Close(); $rootStore.Dispose() } catch {} }
+  if ($rootCertificate) { $rootCertificate.Dispose() }
+}
+try {
+  # Remove the legacy LAN-wide HTTP rule from older installations.
+  Remove-NetFirewallRule -DisplayName 'Zaily Urpaq School Platform' -ErrorAction SilentlyContinue
   $schoolFirewallRules = @(
-    @{ DisplayName = 'Zaily Urpaq School Platform'; Protocol = 'TCP'; LocalPort = 8080 },
     @{ DisplayName = 'Zaily Urpaq School HTTPS'; Protocol = 'TCP'; LocalPort = 8443 },
     @{ DisplayName = 'Zaily Urpaq LiveKit TCP'; Protocol = 'TCP'; LocalPort = 7881 },
     @{ DisplayName = 'Zaily Urpaq LiveKit UDP'; Protocol = 'UDP'; LocalPort = 7882 }

@@ -61,6 +61,7 @@ export async function deliverOutboxBatch(source: OutboxClient, sink: OutboxClien
       await source.$executeRaw`UPDATE "ResultExportOutbox" SET "exportedAt" = ${now}, "lastError" = NULL, "updatedAt" = ${now} WHERE "id" = ${row.id}`;
       delivered++;
     } catch {
+      console.error('Results export delivery failed; retry scheduled');
       const backoffMs = Math.min(15 * 60_000, 1000 * 2 ** Math.min(row.attempts, 10));
       const nextAttempt = new Date(now.getTime() + backoffMs);
       await source.$executeRaw`UPDATE "ResultExportOutbox" SET "availableAt" = ${nextAttempt}, "lastError" = 'External results database unavailable', "updatedAt" = ${now} WHERE "id" = ${row.id}`;
@@ -89,11 +90,28 @@ export class ResultsOutboxService implements OnModuleInit, OnModuleDestroy {
     if (this.sink) void this.sink.$disconnect();
   }
 
+  async healthStatus(): Promise<{ status: 'disabled' | 'connected' | 'pending' | 'unavailable'; pendingCount: number | null }> {
+    if (!this.sink) return { status: 'disabled', pendingCount: null };
+    let pendingCount: number | null = null;
+    try {
+      const rows = await this.prisma.$queryRaw<Array<{ count: bigint | number }>>`
+        SELECT COUNT(*)::bigint AS count FROM "ResultExportOutbox" WHERE "exportedAt" IS NULL`;
+      pendingCount = Number(rows[0]?.count ?? 0);
+      await this.sink.$queryRaw`SELECT 1`;
+      return { status: pendingCount > 0 ? 'pending' : 'connected', pendingCount };
+    } catch {
+      return { status: 'unavailable', pendingCount };
+    }
+  }
+
   async flush() {
     if (!this.sink || this.running) return 0;
     this.running = true;
     try { return await deliverOutboxBatch(this.prisma, this.sink); }
-    catch { return 0; }
+    catch {
+      console.error('Results export queue check failed; retrying automatically');
+      return 0;
+    }
     finally { this.running = false; }
   }
 }

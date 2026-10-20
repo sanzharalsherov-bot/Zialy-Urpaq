@@ -58,7 +58,7 @@ export class RoomsController {
 
   @Post('student/rooms/join-v2')
   joinRoom(@Body() dto: JoinRoomV2Dto, @Req() request: { ip?: string }) {
-    return this.rooms.joinRoom(dto.code, dto.firstName, dto.lastName, dto.sessionToken, request.ip);
+    return this.rooms.joinRoom(dto.code, dto.firstName, dto.lastName, dto.sessionToken, request.ip, dto.deviceId);
   }
 
   @Get('student/rooms/:roomId/v2')

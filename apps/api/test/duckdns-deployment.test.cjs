@@ -10,7 +10,7 @@ test('DuckDNS overlay advertises the trusted domain and keeps database volumes a
   const secretFile = join(dir, '.env.duckdns');
   writeFileSync(secretFile, 'DUCKDNS_API_TOKEN=11111111-2222-3333-4444-555555555555\n');
   const envFile = join(dir, 'test.env');
-  writeFileSync(envFile, `POSTGRES_PASSWORD=fake-config-only\nJWT_SECRET=fake-config-only\nSCHOOL_HOSTNAME=zailyurpaq.duckdns.org\nWEB_PORT=18080\nWEB_HTTPS_PORT=18443\nDUCKDNS_ENV_FILE=${secretFile.replaceAll('\\', '/')}\n`);
+  writeFileSync(envFile, `POSTGRES_PASSWORD=fake-config-only\nJWT_SECRET=fake-config-only\nWEB_ORIGIN=https://zailyurpaq.duckdns.org:18443\nSCHOOL_HOSTNAME=zailyurpaq.duckdns.org\nWEB_PORT=18080\nWEB_HTTPS_PORT=18443\nDUCKDNS_ENV_FILE=${secretFile.replaceAll('\\', '/')}\n`);
   const output = execFileSync('docker', ['compose', '--env-file', envFile, '-p', 'zaily-duckdns-config-test',
     '-f', resolve(__dirname, '../../../compose.production.yaml'), '-f', resolve(__dirname, '../../../compose.duckdns.yaml'), 'config', '--format', 'json'], { encoding: 'utf8' });
   const config = JSON.parse(output);

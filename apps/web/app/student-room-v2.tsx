@@ -7,6 +7,21 @@ import { clearRoomSession, readRoomSession, requestJson, storeRoomSession, write
 const StudentScreenShare = dynamic(() => import('./room-screen-sharing').then(module => module.StudentScreenShare), { ssr: false });
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '/api';
+const ROOM_DEVICE_KEY = 'zaily-urpaq-room-device-id';
+let fallbackRoomDeviceId = '';
+
+function getRoomDeviceId() {
+  try {
+    const saved = window.localStorage.getItem(ROOM_DEVICE_KEY);
+    if (saved && /^[A-Za-z0-9_-]{32,80}$/u.test(saved)) return saved;
+  } catch { /* Use a tab-scoped fallback if browser storage is unavailable. */ }
+  if (fallbackRoomDeviceId) return fallbackRoomDeviceId;
+  const bytes = new Uint8Array(32);
+  window.crypto.getRandomValues(bytes);
+  const generated = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+  try { window.localStorage.setItem(ROOM_DEVICE_KEY, generated); } catch { fallbackRoomDeviceId = generated; }
+  return generated;
+}
 const ACTIVE_ROOM_KEY = 'zaily-active-room-v2';
 const draftKey = (roomId: string) => `zaily-room-draft:${roomId}`;
 const awayKey = (roomId: string) => `zaily-room-away:${roomId}`;
@@ -32,6 +47,9 @@ export function StudentRoomV2({ language, firstName, lastName }: { language: Lan
   const [loadingSession, setLoadingSession] = useState(true);
   const [onlineRetry, setOnlineRetry] = useState(0);
   const lastAutosaved = useRef('{}');
+  const answersRef = useRef<AnswerState>({});
+  const saveInFlight = useRef(false);
+  useEffect(() => { answersRef.current = answers; }, [answers]);
 
   const token = useCallback((roomId: string) => readRoomSession(window.localStorage, roomId), []);
   const refresh = useCallback(async (roomId: string, bearer: string) => {
@@ -99,7 +117,7 @@ export function StudentRoomV2({ language, firstName, lastName }: { language: Lan
     event.preventDefault(); if (busy) return;
     setBusy(true); setMessage(''); setResult(null);
     try {
-      const data = await requestJson(apiUrl, '/student/rooms/join-v2', '', { method: 'POST', body: JSON.stringify({ code, firstName, lastName }) });
+      const data = await requestJson(apiUrl, '/student/rooms/join-v2', '', { method: 'POST', body: JSON.stringify({ code, firstName, lastName, deviceId: getRoomDeviceId() }) });
       const bearer = data.sessionToken || token(data.roomId);
       if (!bearer) throw new Error('Session token was not returned');
       if (data.sessionToken) storeRoomSession(window.localStorage, data.roomId, data.sessionToken);
@@ -116,12 +134,28 @@ export function StudentRoomV2({ language, firstName, lastName }: { language: Lan
     if (serialized === lastAutosaved.current) return;
     try { window.localStorage.setItem(draftKey(roomId), serialized); } catch { /* Keep the draft in memory when browser storage is unavailable. */ }
     const timer = window.setTimeout(async () => {
+      // Never let an older debounced snapshot overwrite a newer answer or race another save.
+      if (JSON.stringify(answersRef.current) !== serialized) { setOnlineRetry(value => value + 1); return; }
+      if (saveInFlight.current) return;
+      let previous: AnswerState = {};
+      try { previous = JSON.parse(lastAutosaved.current); } catch { /* Treat a damaged snapshot as unsaved. */ }
+      const changedAnswers = Object.entries(answers).filter(([questionId, value]) => JSON.stringify(previous[questionId]) !== JSON.stringify(value));
+      if (!changedAnswers.length) {
+        lastAutosaved.current = serialized;
+        try { if (window.localStorage.getItem(draftKey(roomId)) === serialized) window.localStorage.removeItem(draftKey(roomId)); } catch { /* Ignore unavailable storage. */ }
+        return;
+      }
+      saveInFlight.current = true;
       try {
-        const saved = await requestJson(apiUrl, `/student/rooms/${roomId}/v2/answers`, sessionToken, { method: 'PATCH', body: JSON.stringify({ answers: Object.entries(answers).map(([questionId, value]) => ({ questionId, value })) }) });
+        const saved = await requestJson(apiUrl, `/student/rooms/${roomId}/v2/answers`, sessionToken, { method: 'PATCH', body: JSON.stringify({ answers: changedAnswers.map(([questionId, value]) => ({ questionId, value })) }) });
         lastAutosaved.current = serialized;
         try { if (window.localStorage.getItem(draftKey(roomId)) === serialized) window.localStorage.removeItem(draftKey(roomId)); } catch { /* Server copy is already safe. */ }
         setMessage(saved.finished ? t('Тест завершён') : t('Ответ сохранён'));
       } catch { setMessage(t('Нет связи. Повторяем сохранение…')); }
+      finally {
+        saveInFlight.current = false;
+        if (JSON.stringify(answersRef.current) !== serialized) setOnlineRetry(value => value + 1);
+      }
     }, 700);
     return () => window.clearTimeout(timer);
   }, [answers, roomId, sessionToken, status, onlineRetry]);
@@ -190,7 +224,15 @@ export function StudentRoomV2({ language, firstName, lastName }: { language: Lan
     {!roomState && <form className="roomJoinForm" onSubmit={join}><label>{t('Код комнаты')}<input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} minLength={6} required value={code} onChange={event => setCode(event.target.value.replace(/\D/gu, '').slice(0, 6))} /></label><button className="primaryButton" disabled={busy || loadingSession}>{busy ? t('Загрузка комнаты…') : t('Подключиться')}</button></form>}
     {message && <p className="helperText" role="status">{message}</p>}
     {roomState && status === 'WAITING' && <div className="waitingRoomPanel roomV2Waiting"><span className="waitingRoomIcon">◷</span><h3>{t('Ожидаем учителя')}</h3><strong>{t('В комнате')}: {roomState.room.count}/{roomState.room.lobbyTarget ?? '—'}</strong><small>{t('Ответы сохранены автоматически')}</small></div>}
-    {roomState && status === 'IN_PROGRESS' && <><StudentScreenShare roomId={roomState.room.id} sessionToken={sessionToken} language={language} /><div className="helperText">{t('Ответы сохранены автоматически')}</div>{questions.map((question: any, index: number) => <article className="studentQuestion" key={question.id}><span className="questionNumber">{index + 1}</span><div className="studentQuestionBody"><b>{question.prompt}</b>{question.required && <small>{t('Обязательный вопрос')} · {question.points} {t('Баллов')}</small>}{question.type === 'SINGLE_CHOICE' && question.options.map((option: any) => <label className="studentOption" key={option.id}><input type="radio" name={question.id} checked={answers[question.id] === option.id} onChange={() => setAnswers(old => ({ ...old, [question.id]: option.id }))} />{option.text}</label>)}{question.type === 'MULTIPLE_CHOICE' && question.options.map((option: any) => <label className="studentOption" key={option.id}><input type="checkbox" checked={Array.isArray(answers[question.id]) && answers[question.id].includes(option.id)} onChange={event => setAnswers(old => ({ ...old, [question.id]: event.target.checked ? [...(Array.isArray(old[question.id]) ? old[question.id] as string[] : []), option.id] : (Array.isArray(old[question.id]) ? old[question.id] as string[] : []).filter(id => id !== option.id) }))} />{option.text}</label>)}</div></article>)}<div className="formActions"><button className="primaryButton" disabled={busy} onClick={() => void submit()}>{t('Отправить тест')}</button></div></>}
+    {roomState && status === 'IN_PROGRESS' && <><StudentScreenShare roomId={roomState.room.id} sessionToken={sessionToken} language={language} onWarning={async data => {
+      setRoomState((current: any) => current ? { ...current, submission: { ...current.submission, proctorWarnings: data.warnings } } : current);
+      if (data.finished) {
+        const ranking = await requestJson(apiUrl, `/student/rooms/${roomState.room.id}/v2/submit`, sessionToken, { method: 'POST', body: JSON.stringify({}) }).catch(() => null);
+        if (ranking) setResult(ranking);
+        await refresh(roomState.room.id, sessionToken);
+        setMessage(t('Тест завершён после третьего предупреждения. Сохранённые ответы учтены.'));
+      }
+    }} /><div className="helperText">{t('Ответы сохранены автоматически')}</div>{questions.map((question: any, index: number) => <article className="studentQuestion" key={question.id}><span className="questionNumber">{index + 1}</span><div className="studentQuestionBody"><b>{question.prompt}</b>{question.required && <small>{t('Обязательный вопрос')} · {question.points} {t('Баллов')}</small>}{question.type === 'SINGLE_CHOICE' && question.options.map((option: any) => <label className="studentOption" key={option.id}><input type="radio" name={question.id} checked={answers[question.id] === option.id} onChange={() => setAnswers(old => ({ ...old, [question.id]: option.id }))} />{option.text}</label>)}{question.type === 'MULTIPLE_CHOICE' && question.options.map((option: any) => <label className="studentOption" key={option.id}><input type="checkbox" checked={Array.isArray(answers[question.id]) && answers[question.id].includes(option.id)} onChange={event => setAnswers(old => ({ ...old, [question.id]: event.target.checked ? [...(Array.isArray(old[question.id]) ? old[question.id] as string[] : []), option.id] : (Array.isArray(old[question.id]) ? old[question.id] as string[] : []).filter(id => id !== option.id) }))} />{option.text}</label>)}</div></article>)}<div className="formActions"><button className="primaryButton" disabled={busy} onClick={() => void submit()}>{t('Отправить тест')}</button></div></>}
     {(status === 'GRADED' || result) && <div className="roomV2Result"><h3>{t('Ваш результат')}</h3><strong>{result?.score ?? roomState?.submission?.score ?? '—'} {t('Баллов')}</strong><span>{t('Правильных ответов')}: {result?.correctCount ?? roomState?.submission?.correctCount ?? '—'}</span>{result?.rank && <span>{t('Место')}: #{result.rank}</span>}{result?.top?.length > 0 && <><h4>{t('Топ комнаты')}</h4>{result.top.map((item: any) => <div className="leaderboardRow" key={item.rank}><b>#{item.rank}</b><span>{item.lastName} {item.firstName}</span><span>{item.score} {t('Баллов')}</span></div>)}</>}<button className="secondaryButton" onClick={reset}>{t('Закрыть результат')}</button></div>}
   </section>;
 }
