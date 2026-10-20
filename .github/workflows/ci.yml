@@ -150,6 +150,63 @@ jobs:
       - name: Build graphical installer
         shell: powershell
         run: .\\packaging\\windows\\Build-Installer.ps1
+      - name: Validate packaged installer resources and payload
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.IO.Compression
+          $installer = Get-ChildItem 'packaging/windows/dist/ZailyUrpaqSetup*.exe' -File | Select-Object -First 1
+          if (-not $installer) { throw 'Built installer executable was not found.' }
+          $assembly = [System.Reflection.Assembly]::LoadFile($installer.FullName)
+          $resources = @($assembly.GetManifestResourceNames())
+          foreach ($requiredResource in @('Deployment.zip', 'Install.ps1', 'BrandLogo.jpg')) {
+            if ($resources -notcontains $requiredResource) { throw "Installer is missing embedded resource: $requiredResource" }
+          }
+          $payloadResource = $assembly.GetManifestResourceStream('Deployment.zip')
+          if (-not $payloadResource) { throw 'Deployment.zip resource could not be opened.' }
+          $payloadMemory = New-Object System.IO.MemoryStream
+          try {
+            $payloadResource.CopyTo($payloadMemory)
+            $payloadMemory.Position = 0
+            $archive = New-Object System.IO.Compression.ZipArchive($payloadMemory, [System.IO.Compression.ZipArchiveMode]::Read, $false)
+            try {
+              $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\\', '/') })
+              $requiredFiles = @(
+                'package.json',
+                'package-lock.json',
+                'compose.production.yaml',
+                'Caddyfile',
+                'prisma/schema.prisma',
+                'apps/api/package.json',
+                'apps/web/package.json',
+                'packaging/windows/install.ps1',
+                'packaging/windows/Start-Server.ps1',
+                'packaging/windows/Ensure-MediaConfig.ps1',
+                'packaging/windows/Backup.ps1'
+              )
+              foreach ($requiredFile in $requiredFiles) {
+                if ($entries -notcontains $requiredFile) { throw "Installer payload is missing required file: $requiredFile" }
+              }
+              $forbidden = @($entries | Where-Object {
+                $parts = $_ -split '/'
+                ($parts | Where-Object { $_ -in @('node_modules', '.next', '.git', 'tmp', 'backups') }).Count -gt 0 -or
+                $_ -match '(^|/)\\.env([^/]*$)|(^|/)ZailyUrpaqSetup[^/]*\\.exe$|(^|/).*\\.(dump|bak)$|(^|/)reset-admin-password\\.js        uses: actions/upload-artifact@v4
+        with:
+          name: ZailyUrpaqSetup-windows-x64
+          path: packaging/windows/dist/ZailyUrpaqSetup*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+              })
+              if ($forbidden.Count -gt 0) { throw "Installer payload contains excluded files: $($forbidden -join ', ')" }
+              if ($entries.Count -lt 50) { throw "Installer payload unexpectedly contains only $($entries.Count) files." }
+              Write-Host "Installer payload validated: $($entries.Count) entries; required application, deployment and recovery files are present; secrets and generated files are absent."
+            } finally {
+              $archive.Dispose()
+            }
+          } finally {
+            $payloadResource.Dispose()
+            $payloadMemory.Dispose()
+          }
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
