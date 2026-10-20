@@ -118,7 +118,7 @@ async function bootstrap() {
   const port = Number(process.env.API_PORT ?? 4000);
 
   await app.listen(port);
-  console.log(`Zaily Urpaq API listening on http://localhost:${port}/api`);
+  console.log(`Zialy Urpaq API listening on http://localhost:${port}/api`);
 }
 
 if (require.main === module) {
