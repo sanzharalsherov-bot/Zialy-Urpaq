@@ -758,6 +758,40 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
     return { assignment, submissions };
   }
 
+  async returnSubmission(submissionId: string, feedback: string | undefined, user: AuthenticatedUser) {
+    this.requireStaff(user);
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
+      const submission = await tx.submission.findFirst({ where: { id: submissionId, assignment: this.staffScope(user) }, select: { id: true, status: true, assignmentId: true } });
+      if (!submission) throw new NotFoundException('Работа не найдена');
+      if (![SubmissionStatus.UNDER_REVIEW, SubmissionStatus.GRADED, SubmissionStatus.EXPIRED].includes(submission.status)) {
+        throw new BadRequestException('Можно вернуть только отправленную на проверку или проверенную работу');
+      }
+      const updated = await tx.submission.update({ where: { id: submissionId }, data: {
+        status: SubmissionStatus.RETURNED, feedback: feedback?.trim() || 'Исправьте работу и отправьте повторно',
+        totalScore: null, gradedAt: null, reviewerId: user.sub,
+      }});
+      await tx.auditLog.create({ data: { actorId: user.sub, action: 'SUBMISSION_RETURNED', entityType: 'Submission', entityId: submissionId, metadata: { assignmentId: submission.assignmentId } } });
+      await enqueueResultExport(tx, submissionId);
+      return updated;
+    });
+  }
+
+  async reopenReturned(submissionId: string, user: AuthenticatedUser) {
+    this.requireStudent(user);
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
+      const current = await tx.submission.findFirst({ where: { id: submissionId, studentIdentityKey: this.studentIdentityKey(user), status: SubmissionStatus.RETURNED }, select: { id: true } });
+      if (!current) throw new NotFoundException('Работа не найдена или не возвращена на исправление');
+      const submission = await tx.submission.update({
+        where: { id: submissionId },
+        data: { status: SubmissionStatus.IN_PROGRESS, startedAt: new Date(), submittedAt: null, totalScore: null, gradedAt: null, finishReason: 'RESUBMISSION' },
+        include: { assignment: { include: { questions: { orderBy: { position: 'asc' }, include: { options: { orderBy: { position: 'asc' } } } } }, answers: true },
+      });
+      return this.studentAssignmentPayload(submission.assignment, submission);
+    });
+  }
+
   async grade(submissionId: string, dto: GradeSubmissionDto, user: AuthenticatedUser) {
     this.requireStaff(user);
     return this.prisma.$transaction(async tx => {
