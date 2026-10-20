@@ -787,7 +787,17 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       const submission = await tx.submission.update({
         where: { id: submissionId },
         data: { status: SubmissionStatus.IN_PROGRESS, startedAt: new Date(), submittedAt: null, totalScore: null, gradedAt: null, finishReason: 'RESUBMISSION' },
-        include: { assignment: { include: { questions: { orderBy: { position: 'asc' }, include: { options: { orderBy: { position: 'asc' } } } } }, answers: true },
+        include: {
+          assignment: {
+            include: {
+              questions: {
+                orderBy: { position: 'asc' },
+                include: { options: { orderBy: { position: 'asc' } } },
+              },
+            },
+          },
+          answers: true,
+        },
       });
       return this.studentAssignmentPayload(submission.assignment, submission);
     });
