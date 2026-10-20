@@ -460,26 +460,38 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
   async proctorEvent(submissionId: string, dto: { eventType: string }, user: AuthenticatedUser) {
     this.requireStudent(user);
     if (!['VISIBILITY_HIDDEN', 'PAGE_HIDDEN', 'VISIBILITY_RESTORED'].includes(dto.eventType)) throw new BadRequestException('Неизвестное событие наблюдения');
-    const outcome = await this.prisma.$transaction(async tx => {
+    return this.prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
-      const submission = await tx.submission.findFirst({ where: { id: submissionId, studentIdentityKey: this.studentIdentityKey(user), status: SubmissionStatus.IN_PROGRESS }, select: { id: true, assignmentId: true, proctorWarnings: true, answers: { select: { questionId: true, textValue: true, numericValue: true, jsonValue: true } } } });
+      const submission = await tx.submission.findFirst({
+        where: { id: submissionId, studentIdentityKey: this.studentIdentityKey(user), status: SubmissionStatus.IN_PROGRESS },
+        select: {
+          id: true, assignmentId: true, proctorWarnings: true,
+          answers: { select: { questionId: true, textValue: true, numericValue: true, jsonValue: true } },
+        },
+      });
       if (!submission) throw new NotFoundException('Активная попытка не найдена');
       const latest = await tx.proctorEvent.findFirst({ where: { submissionId }, orderBy: { createdAt: 'desc' }, select: { eventType: true } });
       if (dto.eventType === 'VISIBILITY_RESTORED') {
         if (latest && ['VISIBILITY_HIDDEN', 'PAGE_HIDDEN'].includes(latest.eventType)) await tx.proctorEvent.create({ data: { submissionId, eventType: dto.eventType } });
-        return { warnings: submission.proctorWarnings, finish: null };
+        return { warnings: submission.proctorWarnings, expired: false };
       }
-      if (latest && ['VISIBILITY_HIDDEN', 'PAGE_HIDDEN'].includes(latest.eventType)) return { warnings: submission.proctorWarnings, duplicate: true, finish: null };
+      if (latest && ['VISIBILITY_HIDDEN', 'PAGE_HIDDEN'].includes(latest.eventType)) return { warnings: submission.proctorWarnings, expired: false, duplicate: true };
       const warnings = submission.proctorWarnings + 1;
       await tx.proctorEvent.create({ data: { submissionId, eventType: dto.eventType, metadata: { warning: warnings } } });
       await tx.submission.update({ where: { id: submissionId }, data: { proctorWarnings: warnings } });
-      if (warnings < 3) return { warnings, finish: null };
+      if (warnings < 3) return { warnings, expired: false };
       await tx.auditLog.create({ data: { action: 'PROCTORING_VIOLATION_LIMIT', entityType: 'Submission', entityId: submissionId, metadata: { warnings } } });
-      return { warnings, finish: { assignmentId: submission.assignmentId, answers: submission.answers.map(answer => ({ questionId: answer.questionId, ...(answer.textValue === null ? {} : { textValue: answer.textValue }), ...(answer.numericValue === null ? {} : { numericValue: Number(answer.numericValue) }), ...(answer.jsonValue === null ? {} : { jsonValue: answer.jsonValue }) })) } };
+      const answers = submission.answers.map(answer => ({
+        questionId: answer.questionId,
+        ...(answer.textValue === null ? {} : { textValue: answer.textValue }),
+        ...(answer.numericValue === null ? {} : { numericValue: Number(answer.numericValue) }),
+        ...(answer.jsonValue === null ? {} : { jsonValue: answer.jsonValue }),
+      }));
+      const finalized = await this.finalizeInTransaction(
+        tx, submission.assignmentId, submissionId, { answers }, user, 'PROCTORING_VIOLATION_LIMIT',
+      );
+      return { warnings, expired: true, finished: true, finishReason: 'PROCTORING_VIOLATION_LIMIT', ...finalized };
     });
-    if (!outcome.finish) return { warnings: outcome.warnings, expired: false, duplicate: !!outcome.duplicate };
-    const finalized = await this.finalize(outcome.finish.assignmentId, submissionId, { answers: outcome.finish.answers }, user, 'PROCTORING_VIOLATION_LIMIT');
-    return { warnings: outcome.warnings, expired: true, finished: true, finishReason: 'PROCTORING_VIOLATION_LIMIT', ...finalized };
   }
 
   async submit(id: string, submissionId: string, dto: SubmitAnswersDto, user: AuthenticatedUser) {
