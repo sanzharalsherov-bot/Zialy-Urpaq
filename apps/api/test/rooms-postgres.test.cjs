@@ -80,6 +80,18 @@ test('PostgreSQL rooms: independent rooms, session isolation, snapshot redaction
   assert.equal((await service.getRoom(roomA.id, actor)).participants[0].attempt.proctorWarnings, 3);
   assert.equal((await service.joinRoom(roomA.joinCode, 'New', 'Name').catch(e => e.status)), 400);
   await assert.rejects(() => service.startRoom(roomA.id, { sub: other.id, role: 'TEACHER' }), error => error.getStatus() === 404);
+
+  // Real PostgreSQL race: the last two submissions finish at nearly the same time.
+  const raceOne = await service.joinRoom(roomB.joinCode, 'Race', 'One');
+  const raceTwo = await service.joinRoom(roomB.joinCode, 'Race', 'Two');
+  await service.startRoom(roomB.id, actor);
+  const raceResults = await Promise.all([
+    service.submitRoom(roomB.id, raceOne.sessionToken),
+    service.submitRoom(roomB.id, raceTwo.sessionToken),
+  ]);
+  assert.ok(raceResults.every(result => result.submissionId));
+  assert.equal((await prisma.testRoom.findUnique({ where: { id: roomB.id }, select: { status: true } })).status, 'FINISHED');
+  assert.equal(await prisma.submission.count({ where: { roomId: roomB.id, status: 'GRADED' } }), 2);
   assert.ok(rooms.length === 2);
 });
 
