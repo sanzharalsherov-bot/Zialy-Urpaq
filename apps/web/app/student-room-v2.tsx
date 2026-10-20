@@ -49,7 +49,7 @@ export function StudentRoomV2({ language, firstName, lastName }: { language: Lan
   const lastAutosaved = useRef('{}');
   const answersRef = useRef<AnswerState>({});
   const saveInFlight = useRef(false);
-  answersRef.current = answers;
+  useEffect(() => { answersRef.current = answers; }, [answers]);
 
   const token = useCallback((roomId: string) => readRoomSession(window.localStorage, roomId), []);
   const refresh = useCallback(async (roomId: string, bearer: string) => {
