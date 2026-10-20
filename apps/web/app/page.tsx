@@ -563,7 +563,7 @@ export default function Home() {
     setBusy(true); setMessage('');
     try {
       const result = await request(`/assignments/${assignment.id}/results`);
-      setSelectedResults(result); setManualGrades({}); setManualComments({}); setSubmissionFeedback(old => { const next = { ...old }; delete next[item.id]; return next; }); setMonitorOpen(false); setView('results');
+      setSelectedResults(result); setManualGrades({}); setManualComments({}); setSubmissionFeedback({}); setMonitorOpen(false); setView('results');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось загрузить результаты'); }
     finally { setBusy(false); }
   };
@@ -639,7 +639,7 @@ export default function Home() {
       setSelectedResults(updated);
       setManualGrades(old => Object.fromEntries(Object.entries(old).filter(([id]) => !answerRows.some((answer: any) => answer.id === id))));
       setManualComments(old => Object.fromEntries(Object.entries(old).filter(([id]) => !answerRows.some((answer: any) => answer.id === id))));
-      setSubmissionFeedback('');
+      setSubmissionFeedback(old => { const next = { ...old }; delete next[item.id]; return next; });
       setMessage('Оценка сохранена');
       await refreshStaff();
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось сохранить оценку'); }
