@@ -168,6 +168,8 @@ export default function Home() {
   const [newStudentClassId, setNewStudentClassId] = useState('');
   const [assignmentClassId, setAssignmentClassId] = useState('');
   const [manualGrades, setManualGrades] = useState<Record<string, string>>({});
+  const [manualComments, setManualComments] = useState<Record<string, string>>({});
+  const [submissionFeedback, setSubmissionFeedback] = useState('');
   const [restoringSession, setRestoringSession] = useState(true);
   const [clock, setClock] = useState(Date.now());
   const [onlineRetry, setOnlineRetry] = useState(0);
@@ -194,7 +196,7 @@ export default function Home() {
     writeStorage(window.sessionStorage, ATTEMPT_KEY, null);
     writeStorage(window.localStorage, TOKEN_KEY, null);
     setToken(''); setUser(null); setSubmission(null); setSelectedAssignment(null); setSelectedResults(null); setStudentResult(null);
-    setAssignments([]); setAvailable([]); setAccounts([]); setAnswers({}); setManualGrades({});
+    setAssignments([]); setAvailable([]); setAccounts([]); setAnswers({}); setManualGrades({}); setManualComments({}); setSubmissionFeedback('');
     setPassword(''); setStudentCode(''); setStudentFirstName(''); setStudentLastName(''); setEmail('');
     setAccountPassword(''); setAccountEmail(''); setAccountFirstName(''); setAccountLastName('');
     setStudentAccessCodeInput(''); setStudentAccessCodeConfigured(false); setSchoolClasses([]); setSchoolStudents([]); setClassNameDraft(''); setNewStudentFirstName(''); setNewStudentLastName(''); setNewStudentNo(''); setNewStudentClassId(''); setAssignmentClassId('');
@@ -561,7 +563,7 @@ export default function Home() {
     setBusy(true); setMessage('');
     try {
       const result = await request(`/assignments/${assignment.id}/results`);
-      setSelectedResults(result); setManualGrades({}); setMonitorOpen(false); setView('results');
+      setSelectedResults(result); setManualGrades({}); setManualComments({}); setSubmissionFeedback(''); setMonitorOpen(false); setView('results');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось загрузить результаты'); }
     finally { setBusy(false); }
   };
@@ -628,14 +630,16 @@ export default function Home() {
       if (!validPoints(awardedPoints)) {
         setMessage('Укажите баллы от 0 до 10000, не более двух знаков после запятой'); return;
       }
-      values.push({ answerId: answer.id, awardedPoints, teacherComment: answer.teacherComment || undefined });
+      values.push({ answerId: answer.id, awardedPoints, teacherComment: manualComments[answer.id] ?? answer.teacherComment ?? undefined });
     }
     setBusy(true); setMessage('');
     try {
-      await request(`/submissions/${item.id}/grade`, { method: 'PATCH', body: JSON.stringify({ answers: values }) });
+      await request(`/submissions/${item.id}/grade`, { method: 'PATCH', body: JSON.stringify({ answers: values, feedback: submissionFeedback.trim() || undefined }) });
       const updated = await request(`/assignments/${selectedResults.assignment.id}/results`);
       setSelectedResults(updated);
       setManualGrades(old => Object.fromEntries(Object.entries(old).filter(([id]) => !answerRows.some((answer: any) => answer.id === id))));
+      setManualComments(old => Object.fromEntries(Object.entries(old).filter(([id]) => !answerRows.some((answer: any) => answer.id === id))));
+      setSubmissionFeedback('');
       setMessage('Оценка сохранена');
       await refreshStaff();
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось сохранить оценку'); }
@@ -1032,10 +1036,11 @@ export default function Home() {
                     <label>{t('Баллы')}<input type="number" min="0" max={10000} step="0.01" disabled={busy} value={manualGrades[a.id] ?? (a.awardedPoints === null ? '' : String(a.awardedPoints))} onChange={e => setManualGrades(old => ({ ...old, [a.id]: e.target.value }))} aria-label={`${t('Баллы')} ${t('Вопрос')} ${a.question.position}, ${t('максимум')} 10000`} placeholder={t('Введите баллы')} /></label>
                     <button type="button" className="secondaryButton gradeFullButton" disabled={busy} onClick={() => setManualGrades(old => ({ ...old, [a.id]: '1' }))}>{t('Засчитать · 1 балл')}</button>
                     <button type="button" className="secondaryButton gradeZeroButton" disabled={busy} onClick={() => setManualGrades(old => ({ ...old, [a.id]: '0' }))}>{t("Не засчитывать · 0")}</button>
+                    <label className="teacherCommentField">Комментарий к ответу<textarea maxLength={5000} disabled={busy} value={manualComments[a.id] ?? a.teacherComment ?? ''} onChange={e => setManualComments(old => ({ ...old, [a.id]: e.target.value }))} placeholder="Комментарий для ученика" /></label>
                   </div>
                 </div>}
               </div>)}</div>
-              {(s.status === 'EXPIRED' || s.answers.some((a: any) => isManualQuestion(a.question.type))) && <div className="manualReviewFooter"><div><b>{t("Проверка работы")}</b><p>{t(s.answers.some((a: any) => isManualQuestion(a.question.type)) ? 'Введите баллы за каждый текстовый ответ, затем сохраните оценку.' : 'Работа отправлена после окончания времени. Проверьте ответы и подтвердите оценку.')}</p></div><button className="primaryButton" disabled={busy} onClick={() => gradeSubmission(s)}>{busy ? t('Сохраняем…') : s.status === 'GRADED' ? t('Сохранить изменения') : t('Сохранить оценку')}</button></div>}
+              {(s.status === 'EXPIRED' || s.answers.some((a: any) => isManualQuestion(a.question.type))) && <div className="manualReviewFooter"><div><b>{t("Проверка работы")}</b><p>{t(s.answers.some((a: any) => isManualQuestion(a.question.type)) ? 'Введите баллы за каждый текстовый ответ, затем сохраните оценку.' : 'Работа отправлена после окончания времени. Проверьте ответы и подтвердите оценку.')}</p><label className="teacherCommentField">Общий комментарий к работе<textarea maxLength={10000} disabled={busy} value={submissionFeedback || s.feedback || ''} onChange={e => setSubmissionFeedback(e.target.value)} placeholder="Обратная связь для ученика" /></label></div><button className="primaryButton" disabled={busy} onClick={() => gradeSubmission(s)}>{busy ? t('Сохраняем…') : s.status === 'GRADED' ? t('Сохранить изменения') : t('Сохранить оценку')}</button></div>}
               <div className="resultFoot"><span className={`status ${s.status === 'GRADED' ? '' : 'pending'}`}>{t(({ IN_PROGRESS: 'В процессе', SUBMITTED: 'Отправлено', UNDER_REVIEW: 'На проверке', GRADED: 'Проверено', EXPIRED: 'Время истекло', RETURNED: 'Возвращено' } as Record<string, string>)[s.status] || s.status)}</span>{s.feedback && <span className="muted">{s.feedback}</span>}</div>
             </article>)}
             {!selectedResults.submissions.length && <p className="emptyState">{t("Попыток пока нет.")}</p>}
