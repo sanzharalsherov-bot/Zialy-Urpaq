@@ -2,8 +2,15 @@ export function validateProductionConfiguration(env: NodeJS.ProcessEnv = process
   if (env.NODE_ENV !== 'production') return;
 
   const jwtSecret = env.JWT_SECRET ?? '';
-  if (Buffer.byteLength(jwtSecret, 'utf8') < 32 ||
-      /^(replace-with|change-me|your-secret|example-secret)/iu.test(jwtSecret)) {
+  const jwtBytes = Buffer.byteLength(jwtSecret, 'utf8');
+  const looksLikePlaceholder = /^(replace-with|change-me|your-secret|example-secret)/iu.test(jwtSecret);
+  const hasLowCharacterDiversity = new Set(jwtSecret).size < 12;
+  const repeatsShortPattern = /^(.{1,4})\1+$/u.test(jwtSecret);
+  const reusesAnotherSecret = [env.POSTGRES_PASSWORD, env.BOOTSTRAP_ADMIN_KEY, env.LIVEKIT_API_SECRET]
+    .some(secret => typeof secret === 'string' && secret.length > 0 && secret === jwtSecret);
+
+  if (jwtBytes < 32 || looksLikePlaceholder || hasLowCharacterDiversity ||
+      repeatsShortPattern || reusesAnotherSecret) {
     throw new Error('JWT_SECRET must be a unique random secret of at least 32 bytes in production');
   }
   const webOrigin = env.WEB_ORIGIN ?? '';
