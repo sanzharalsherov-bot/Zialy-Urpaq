@@ -374,7 +374,31 @@ $certificateExport = Invoke-DockerCommand @('cp', "${composeProjectName}-caddy-1
 if ($certificateExport.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $lanCertificateFile)) {
   throw 'Не удалось сохранить корневой сертификат локального HTTPS. Проверьте логи Caddy и повторите установку.'
 }
-Import-Certificate -FilePath $lanCertificateFile -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
+$certificateTrusted = $false
+$lanCertificate = $null
+$rootStore = $null
+try {
+  # Import through the .NET store API instead of Import-Certificate, which can
+  # request a UI interaction that is unavailable in some installer launch contexts.
+  $lanCertificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList $lanCertificateFile
+  $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store -ArgumentList @('Root', 'CurrentUser')
+  $rootStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+  $alreadyTrusted = $false
+  foreach ($trustedCertificate in $rootStore.Certificates) {
+    if ($trustedCertificate.Thumbprint -eq $lanCertificate.Thumbprint) {
+      $alreadyTrusted = $true
+      break
+    }
+  }
+  if (-not $alreadyTrusted) { $rootStore.Add($lanCertificate) }
+  $certificateTrusted = $true
+} catch {
+  Write-Host 'Предупреждение: не удалось автоматически добавить сертификат HTTPS в доверенные сертификаты текущего пользователя. Сервер продолжит работу; сертификат сохранён в lan-root-ca.crt.' -ForegroundColor Yellow
+  Write-InstallStatus 'Сервер запущен. Завершаю настройки; автоматическое доверие HTTPS не удалось.'
+} finally {
+  if ($rootStore) { try { $rootStore.Close() } catch {} }
+  if ($lanCertificate) { try { $lanCertificate.Dispose() } catch {} }
+}
 try {
   # Remove the legacy LAN-wide HTTP rule from older installations.
   Remove-NetFirewallRule -DisplayName 'Zaily Urpaq School Platform' -ErrorAction SilentlyContinue
@@ -392,41 +416,47 @@ try {
   Write-Host 'Не удалось создать правила брандмауэра для сайта/LiveKit. Доступ с других компьютеров может потребовать ручной настройки Windows Firewall.' -ForegroundColor Yellow
 }
 
-$shell = New-Object -ComObject WScript.Shell
-if ([bool]$setupConfig.createDesktopShortcut) {
-  $desktop = [Environment]::GetFolderPath('Desktop')
-  $shortcut = $shell.CreateShortcut((Join-Path $desktop 'Zaily Urpaq.lnk'))
-  if (-not (Test-Path -LiteralPath $launcherExe)) { throw 'Не удалось подготовить приложение запуска. Повторно соберите установщик и запустите установку снова.' }
-  $shortcut.TargetPath = $launcherExe
-  $shortcut.Arguments = '--launch'
-  $shortcut.WorkingDirectory = $installDir
-  $shortcut.IconLocation = "$launcherExe,0"
-  $shortcut.Save()
+$shell = $null
+try {
+  $shell = New-Object -ComObject WScript.Shell
+  if ([bool]$setupConfig.createDesktopShortcut) {
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $shortcut = $shell.CreateShortcut((Join-Path $desktop 'Zaily Urpaq.lnk'))
+    if (-not (Test-Path -LiteralPath $launcherExe)) { throw 'Не удалось подготовить приложение запуска. Повторно соберите установщик и запустите установку снова.' }
+    $shortcut.TargetPath = $launcherExe
+    $shortcut.Arguments = '--launch'
+    $shortcut.WorkingDirectory = $installDir
+    $shortcut.IconLocation = "$launcherExe,0"
+    $shortcut.Save()
 
-  $cloudflareShortcut = $shell.CreateShortcut((Join-Path $desktop 'Zaily Urpaq - Cloudflare.lnk'))
-  $cloudflareShortcut.TargetPath = $launcherExe
-  $cloudflareShortcut.Arguments = '--cloudflare'
-  $cloudflareShortcut.WorkingDirectory = $installDir
-  $cloudflareShortcut.Description = 'Настроить защищённый доступ через Cloudflare Tunnel'
-  $cloudflareShortcut.IconLocation = "$launcherExe,0"
-  $cloudflareShortcut.Save()
-}
+    $cloudflareShortcut = $shell.CreateShortcut((Join-Path $desktop 'Zaily Urpaq - Cloudflare.lnk'))
+    $cloudflareShortcut.TargetPath = $launcherExe
+    $cloudflareShortcut.Arguments = '--cloudflare'
+    $cloudflareShortcut.WorkingDirectory = $installDir
+    $cloudflareShortcut.Description = 'Настроить защищённый доступ через Cloudflare Tunnel'
+    $cloudflareShortcut.IconLocation = "$launcherExe,0"
+    $cloudflareShortcut.Save()
+  }
 
-$startupDir = [Environment]::GetFolderPath('Startup')
-$dockerDesktopPath = @(
-  (Join-Path $env:LOCALAPPDATA 'Programs\DockerDesktop\Docker Desktop.exe'),
-  (Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe')
-) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if ($dockerDesktopPath) {
-  $dockerStartupShortcut = $shell.CreateShortcut((Join-Path $startupDir 'Docker Desktop.lnk'))
-  $dockerStartupShortcut.TargetPath = $dockerDesktopPath
-  $dockerStartupShortcut.Save()
+  $startupDir = [Environment]::GetFolderPath('Startup')
+  $dockerDesktopPath = @(
+    (Join-Path $env:LOCALAPPDATA 'Programs\DockerDesktop\Docker Desktop.exe'),
+    (Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe')
+  ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+  if ($dockerDesktopPath) {
+    $dockerStartupShortcut = $shell.CreateShortcut((Join-Path $startupDir 'Docker Desktop.lnk'))
+    $dockerStartupShortcut.TargetPath = $dockerDesktopPath
+    $dockerStartupShortcut.Save()
+  }
+  $startupShortcut = $shell.CreateShortcut((Join-Path $startupDir 'Zaily Urpaq Server.lnk'))
+  $startupShortcut.TargetPath = (Join-Path $PSHOME 'powershell.exe')
+  $startupShortcut.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + (Join-Path $installDir 'packaging\windows\Start-Server.ps1') + '"'
+  $startupShortcut.WorkingDirectory = $installDir
+  $startupShortcut.Save()
+} catch {
+  Write-Host 'Предупреждение: сервер запущен, но Windows не разрешила автоматически создать ярлыки. Откройте платформу через http://localhost:8080; автоматический запуск после входа может потребовать настройки.' -ForegroundColor Yellow
+  Write-InstallStatus 'Сервер работает. Завершаю установку без ярлыков автозапуска.'
 }
-$startupShortcut = $shell.CreateShortcut((Join-Path $startupDir 'Zaily Urpaq Server.lnk'))
-$startupShortcut.TargetPath = (Join-Path $PSHOME 'powershell.exe')
-$startupShortcut.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + (Join-Path $installDir 'packaging\windows\Start-Server.ps1') + '"'
-$startupShortcut.WorkingDirectory = $installDir
-$startupShortcut.Save()
 
 $addresses = Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway } | ForEach-Object { $_.IPv4Address.IPAddress } | Where-Object { $_ -and $_ -notlike '127.*' }
 Write-Host ''
@@ -437,7 +467,11 @@ Write-Host 'Для HTTPS на каждом устройстве школы не�
 Write-Host 'Docker Desktop настроен на автоматический запуск при входе пользователя Windows.'
 Write-Host 'Cloudflare Tunnel подключается отдельным скриптом Enable-Cloudflare.ps1 после настройки hostname в Cloudflare.'
 Write-Host 'Резервную копию базы создаёт packaging\windows\Backup.ps1.'
-Start-Process 'http://localhost:8080'
+try {
+  Start-Process -FilePath 'http://localhost:8080' -ErrorAction Stop
+} catch {
+  Write-Host 'Платформа установлена, но браузер не удалось открыть автоматически. Откройте http://localhost:8080 вручную.' -ForegroundColor Yellow
+}
 Write-InstallStatus 'Установка завершена. Платформа открывается в браузере.'
 } catch {
   $errorText = [string]$_.Exception.Message
