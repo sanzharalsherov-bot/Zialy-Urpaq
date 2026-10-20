@@ -243,6 +243,40 @@ test('room answers autosave securely and submit calculates score from the frozen
   assert.equal(db.room.status, 'FINISHED');
 });
 
+test('autosave rechecks attempt status after acquiring the row lock', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+  db.room.status = 'RUNNING'; db.room.startedAt = new Date(); db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+  const originalQuery = db.$queryRaw;
+  db.$queryRaw = async (strings, ...values) => {
+    const query = strings.join('?');
+    if (query.includes('FROM "Submission"') && query.includes('FOR UPDATE')) db.submissions[0].status = 'GRADED';
+    return originalQuery(strings, ...values);
+  };
+  await assert.rejects(
+    () => service.saveRoomAnswers('room-join', joined.sessionToken, { answers: [{ questionId: 'q1', value: 'a' }] }),
+    error => error.getStatus() === 404,
+  );
+  assert.equal(db.answers.length, 0);
+});
+
+test('concurrent duplicate submit becomes idempotent after the row lock', async () => {
+  const db = fakeJoinPrisma(); const service = new RoomsService(db);
+  const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
+  db.room.status = 'RUNNING'; db.room.startedAt = new Date(); db.room.snapshot = fakeJoinPrisma('RUNNING').room.snapshot;
+  db.submissions[0].status = 'IN_PROGRESS';
+  const originalQuery = db.$queryRaw;
+  db.$queryRaw = async (strings, ...values) => {
+    const query = strings.join('?');
+    if (query.includes('FROM "Submission"') && query.includes('FOR UPDATE')) db.submissions[0].status = 'GRADED';
+    return originalQuery(strings, ...values);
+  };
+  const result = await service.submitRoom('room-join', joined.sessionToken);
+  assert.equal(result.alreadySubmitted, true);
+  assert.equal(db.submissions[0].status, 'GRADED');
+});
+
 test('room submission after deadline is recorded as TIME_LIMIT', async () => {
   const db = fakeJoinPrisma(); const service = new RoomsService(db);
   const joined = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
