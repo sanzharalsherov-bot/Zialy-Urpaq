@@ -48,7 +48,7 @@ services:
       LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       BOOTSTRAP_ADMIN_KEY: ${BOOTSTRAP_ADMIN_KEY:-}
-      WEB_ORIGIN: http://localhost
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN to the school's HTTPS origin}
       API_PORT: 4000
       TRUST_PROXY_HOPS: 1
     depends_on:
