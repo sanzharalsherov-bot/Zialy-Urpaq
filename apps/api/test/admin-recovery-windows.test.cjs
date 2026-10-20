@@ -45,3 +45,15 @@ test('installer adds the administrator recovery shortcut without recreating user
   assert.match(installer, /if \(\$existingUserCount -gt 0\)/u);
   assert.match(installer, /Сохраняю их без изменений/u);
 });
+
+
+test('admin recovery embeds Node code as static base64 so PowerShell parses the complete script', () => {
+  const match = recovery.match(/^\$nodeSourceBase64 = '([A-Za-z0-9+/=]+)'$/mu);
+  assert.ok(match, 'recovery should use a static base64 JavaScript payload, not a PowerShell here-string');
+  assert.doesNotMatch(recovery, /^\$nodeSource = @'/mu);
+  const nodeSource = Buffer.from(match[1], 'base64').toString('utf8');
+  assert.match(nodeSource, /new PrismaClient\(\)/u);
+  assert.match(nodeSource, /role !== "ADMIN"/u);
+  assert.match(nodeSource, /bcrypt\.hash\(password, 12\)/u);
+  assert.match(nodeSource, /ADMIN_PASSWORD_RESET_OK/u);
+});
