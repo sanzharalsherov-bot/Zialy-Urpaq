@@ -20,6 +20,8 @@ function safeUrl(value, label) {
 const source = safeUrl(sourceUrl, 'TEST_DATABASE_URL');
 const results = safeUrl(resultsUrl, 'TEST_RESULTS_DATABASE_URL');
 assert.notEqual(source.pathname, results.pathname, 'Source and results databases must be separate.');
+assert.equal(source.hostname, results.hostname, 'Both CI databases must share the same local PostgreSQL service.');
+assert.equal(source.port, results.port, 'Both CI databases must share the same local PostgreSQL service.');
 const token = randomUUID();
 const root = resolve('tmp/ci-backup-recovery');
 rmSync(root, { recursive: true, force: true });
@@ -54,7 +56,7 @@ try {
   pg(['pg_restore', '--exit-on-error', '--no-owner', '-d', restoreResults.toString(), '/backup/results.dump'], source.toString());
 
   for (const [url, expected] of [[restoreSource, 'primary'], [restoreResults, 'results']]) {
-    const actual = pg(['psql', '-At', '-v', 'ON_ERROR_STOP=1', '-d', url.toString(), '-c', `SELECT "id" || ':' || "payload"->>'database' FROM "QaRecoverySentinel" WHERE "id" = '${token}'`], source.toString());
+    const actual = pg(['psql', '-At', '-v', 'ON_ERROR_STOP=1', '-d', url.toString(), '-c', `SELECT "id" || ':' || ("payload"->>'database') FROM "QaRecoverySentinel" WHERE "id" = '${token}'`], source.toString());
     assert.equal(actual, `${token}:${expected}`, 'Restored sentinel does not match its source database.');
   }
   const report = { passed: true, isolated: true, postgresMajor: 17, bothDumpsListed: true,
