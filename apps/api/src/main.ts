@@ -12,6 +12,13 @@ dotenv.config({
 });
 
 export function configureApplication(app: NestExpressApplication) {
+  if (process.env.NODE_ENV === 'production') {
+    const jwtSecret = process.env.JWT_SECRET ?? '';
+    if (Buffer.byteLength(jwtSecret, 'utf8') < 32 ||
+        /^(replace-with|change-me|your-secret|example-secret)/iu.test(jwtSecret)) {
+      throw new Error('JWT_SECRET must be a unique random secret of at least 32 bytes in production');
+    }
+  }
   if (process.env.NODE_ENV === 'production' && !process.env.WEB_ORIGIN) {
     throw new Error('WEB_ORIGIN must be configured in production');
   }
