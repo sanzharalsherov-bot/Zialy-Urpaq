@@ -1,6 +1,7 @@
 // Run only against the disposable Compose project bound to localhost:18081.
 // Credentials come from environment variables and are never printed.
 import { performance } from 'node:perf_hooks';
+import { randomUUID } from 'node:crypto';
 
 const base = process.env.LOAD_BASE_URL;
 const bootstrapKey = process.env.LOAD_BOOTSTRAP_KEY;
@@ -70,7 +71,7 @@ const roster = rooms.flatMap((room, roomIndex) => Array.from({ length: 40 }, (_,
   room, firstName: `Student${roomIndex + 1}`, lastName: `Number${studentIndex + 1}`,
 })));
 const students = await phase('join-400', roster, async student => ({ ...student, joined: await request('/student/rooms/join-v2', {
-  method: 'POST', body: { code: student.room.joinCode, firstName: student.firstName, lastName: student.lastName },
+  method: 'POST', body: { code: student.room.joinCode, firstName: student.firstName, lastName: student.lastName, deviceId: randomUUID() },
 }) }));
 await phase('start-rooms', rooms, room => request(`/rooms/${room.id}/start`, { method: 'POST', token: staffToken }));
 const active = await phase('read-400', students, async student => ({ ...student, view: await request(`/student/rooms/${student.room.id}/v2`, { token: student.joined.sessionToken }) }));
