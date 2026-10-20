@@ -633,6 +633,42 @@ export default function Home() {
     finally { submissionInFlight.current = false; setBusy(false); }
   };
 
+  const returnSubmission = async (item: any) => {
+    if (busy) return;
+    setBusy(true); setMessage('');
+    try {
+      await request(`/submissions/${item.id}/return`, { method: 'PATCH', body: JSON.stringify({
+        feedback: submissionFeedback[item.id] !== undefined ? submissionFeedback[item.id].trim() : (item.feedback ?? 'Исправьте работу и отправьте повторно'),
+      }) });
+      setMessage('Работа возвращена ученику на исправление');
+      setSelectedResults(await request(`/assignments/${selectedResults.assignment.id}/results`));
+      await refreshStaff();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось вернуть работу'); }
+    finally { setBusy(false); }
+  };
+
+  const reviseReturned = async (submissionId: string) => {
+    if (busy) return;
+    setBusy(true); setMessage('');
+    try {
+      const reopened = await request(`/student/submissions/${submissionId}/reopen`, { method: 'POST', body: JSON.stringify({}) });
+      const restored: Record<string, any> = {};
+      for (const answer of reopened.answers || []) {
+        const question = reopened.assignment.questions.find((q: any) => q.id === answer.questionId);
+        if (!question) continue;
+        if (question.type === 'NUMERIC') restored[answer.questionId] = answer.numericValue == null ? '' : String(answer.numericValue);
+        else if (question.type === 'SINGLE_CHOICE' || question.type === 'MULTIPLE_CHOICE') restored[answer.questionId] = answer.jsonValue ?? (question.type === 'MULTIPLE_CHOICE' ? [] : '');
+        else restored[answer.questionId] = answer.textValue ?? '';
+      }
+      setSelectedAssignment(reopened.assignment); setSubmission(reopened.submission); setAnswers(restored);
+      setStudentResult(null); setView('student'); setDraftStatus('saved');
+      lastAutosavedAnswers.current = {};
+      writeStorage(window.sessionStorage, ATTEMPT_KEY, JSON.stringify({ userId: user?.id, assignment: reopened.assignment, submission: reopened.submission, answers: restored }));
+      setMessage('Работа открыта для исправления. После изменений отправьте её повторно.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось открыть работу для исправления'); }
+    finally { setBusy(false); }
+  };
+
   const gradeSubmission = async (item: any) => {
     const answerRows = item.answers.filter((a: any) => isManualQuestion(a.question.type));
     if (!answerRows.length && item.status !== 'EXPIRED') { setMessage('В этой работе нет ответов, требующих ручной проверки'); return; }
@@ -1060,7 +1096,7 @@ export default function Home() {
                   </div>
                 </div>}
               </div>)}</div>
-              {(s.status === 'EXPIRED' || s.answers.some((a: any) => isManualQuestion(a.question.type))) && <div className="manualReviewFooter"><div><b>{t("Проверка работы")}</b><p>{t(s.answers.some((a: any) => isManualQuestion(a.question.type)) ? 'Введите баллы за каждый текстовый ответ, затем сохраните оценку.' : 'Работа отправлена после окончания времени. Проверьте ответы и подтвердите оценку.')}</p><label className="teacherCommentField">Общий комментарий к работе<textarea maxLength={10000} disabled={busy} value={submissionFeedback[s.id] ?? s.feedback ?? ''} onChange={e => setSubmissionFeedback(old => ({ ...old, [s.id]: e.target.value }))} placeholder="Обратная связь для ученика" /></label></div><button className="primaryButton" disabled={busy} onClick={() => gradeSubmission(s)}>{busy ? t('Сохраняем…') : s.status === 'GRADED' ? t('Сохранить изменения') : t('Сохранить оценку')}</button></div>}
+              {(s.status === 'EXPIRED' || s.answers.some((a: any) => isManualQuestion(a.question.type))) && <div className="manualReviewFooter"><div><b>{t("Проверка работы")}</b><p>{t(s.answers.some((a: any) => isManualQuestion(a.question.type)) ? 'Введите баллы за каждый текстовый ответ, затем сохраните оценку.' : 'Работа отправлена после окончания времени. Проверьте ответы и подтвердите оценку.')}</p><label className="teacherCommentField">Общий комментарий к работе<textarea maxLength={10000} disabled={busy} value={submissionFeedback[s.id] ?? s.feedback ?? ''} onChange={e => setSubmissionFeedback(old => ({ ...old, [s.id]: e.target.value }))} placeholder="Обратная связь для ученика" /></label></div><button className="primaryButton" disabled={busy} onClick={() => gradeSubmission(s)}>{busy ? t('Сохраняем…') : s.status === 'GRADED' ? t('Сохранить изменения') : t('Сохранить оценку')}</button>{['UNDER_REVIEW', 'GRADED', 'EXPIRED'].includes(s.status) && <button type="button" className="secondaryButton" disabled={busy} onClick={() => returnSubmission(s)}>{t('Вернуть на исправление')}</button>}</div>}
               <div className="resultFoot"><span className={`status ${s.status === 'GRADED' ? '' : 'pending'}`}>{t(({ IN_PROGRESS: 'В процессе', SUBMITTED: 'Отправлено', UNDER_REVIEW: 'На проверке', GRADED: 'Проверено', EXPIRED: 'Время истекло', RETURNED: 'Возвращено' } as Record<string, string>)[s.status] || s.status)}</span>{s.feedback && <span className="muted">{s.feedback}</span>}</div>
             </article>)}
             {!selectedResults.submissions.length && <p className="emptyState">{t("Попыток пока нет.")}</p>}
@@ -1087,6 +1123,7 @@ export default function Home() {
           {studentResult.finishReason === 'PROCTORING_VIOLATION_LIMIT' && <p className="proctorNotice" role="status">{t('Попытка завершена: три предупреждения о переключении вкладки. Сохранённые ответы проверены.')}</p>}
           {studentResult.score === null && <p className="helperText">{t('Текстовые ответы проверяет преподаватель. Результат обновится автоматически после проверки.')}</p>}
           <div className="studentResultKpis"><article><span>{t('Баллы')}</span><strong>{studentResult.score ?? '—'}</strong></article><article><span>{t('Место в рейтинге')}</span><strong>{studentResult.rank ? `#${studentResult.rank}` : '—'}</strong></article><article><span>{t('Правильных ответов')}</span><strong>{studentResult.correctCount ?? '—'}</strong></article><article><span>{t('Время прохождения')}</span><strong>{Math.floor((studentResult.durationMs || 0) / 60000)}:{String(Math.floor(((studentResult.durationMs || 0) % 60000) / 1000)).padStart(2, '0')}</strong></article></div>
+          {studentResult.status === 'RETURNED' && <div className="manualReviewFooter"><div><b>{t('Работа возвращена на исправление')}</b><p>{t('Исправьте ответы и отправьте работу повторно.')}</p></div><button className="primaryButton" disabled={busy} onClick={() => reviseReturned(studentResult.submissionId)}>{t('Исправить работу')}</button></div>}
           {studentResult.feedback && <div className="manualReviewFooter"><div><b>{t('Комментарий преподавателя')}</b><p>{studentResult.feedback}</p></div></div>}
           {studentResult.answers?.length > 0 && <section className="studentAnswerReview" aria-label={t('Проверка ответов')}>
             <h4>{t('Ответы и комментарии')}</h4>
