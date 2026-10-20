@@ -184,7 +184,7 @@ export default function Home() {
     if (!languageLoaded) return;
     writeStorage(window.localStorage, 'school-crm-language', language);
     document.documentElement.lang = language;
-    document.title = language === 'kk' ? 'Zaily Urpaq мектебі | Оқу платформасы' : language === 'en' ? 'Zaily Urpaq School | Learning Platform' : 'Zaily Urpaq мектебі | Учебная платформа';
+    document.title = language === 'kk' ? 'Zialy Urpaq мектебі | Оқу платформасы' : language === 'en' ? 'Zialy Urpaq School | Learning Platform' : 'Zialy Urpaq мектебі | Учебная платформа';
   }, [language, languageLoaded]);
 
   const isStaff = user?.role === 'ADMIN' || user?.role === 'TEACHER';
@@ -820,15 +820,15 @@ export default function Home() {
   if (!user) {
     return (
       <main className="loginShell">
-        <section className="loginShowcase" aria-label="Zaily Urpaq мектебі">
-          <div className="showcaseBrand"><span className="showcaseMark">ZU</span><span>Zaily Urpaq <small>МЕКТЕБІ</small></span></div>
+        <section className="loginShowcase" aria-label="Zialy Urpaq мектебі">
+          <div className="showcaseBrand"><span className="showcaseMark">ZU</span><span>Zialy Urpaq <small>МЕКТЕБІ</small></span></div>
           <div className="showcaseCopy"><span className="eyebrow">{t('УЧЕБНАЯ ПЛАТФОРМА')}</span><h2>{t('Всё для обучения.')}<br/><em>{t('В одном месте.')}</em></h2><p>{t('Создавайте задания, проверяйте работы и отслеживайте учебный прогресс.')}</p></div>
           <div className="showcaseTiles" aria-hidden="true"><span>01 <b>{t("Задания")}</b></span><span>02 <b>{t("Результаты")}</b></span><span>03 <b>{t("Прогресс")}</b></span></div>
           <div className="showcaseOrb" aria-hidden="true" />
         </section>
         <section className="loginCard">
           {languagePicker}
-          <div className="brand loginBrand"><img className="brandLogo" src="/brand/zaily-urpaq-logo.jpg" alt="Zaily Urpaq мектебі" /></div>
+          <div className="brand loginBrand"><img className="brandLogo" src="/brand/zaily-urpaq-logo.jpg" alt="Zialy Urpaq мектебі" /></div>
           <span className="eyebrow">{t('УЧЕБНАЯ ПЛАТФОРМА')}</span>
           <h1>{t('Войти в систему')}</h1>
           <div className="loginSwitch" role="group" aria-label={t("Тип входа")}>
@@ -857,7 +857,7 @@ export default function Home() {
   return (
     <main className="shell">
       <aside className="sidebar">
-        <div className="brand"><img className="brandLogo" src="/brand/zaily-urpaq-logo.jpg" alt="Zaily Urpaq мектебі" /></div>
+        <div className="brand"><img className="brandLogo" src="/brand/zaily-urpaq-logo.jpg" alt="Zialy Urpaq мектебі" /></div>
         <div className="sideLabel">{t('ПЛАТФОРМА')}</div>
         {isStaff ? <>
           <button className={`navItem ${view === 'overview' ? 'active' : ''}`} onClick={() => setView('overview')}>▦ <span>{t('Обзор')}</span></button>
@@ -1071,7 +1071,7 @@ export default function Home() {
           </div></div>)}
           <div className="formActions"><button className="secondaryButton" disabled={busy} onClick={exitTest}>{t("Выйти из теста")}</button><button className="primaryButton" disabled={busy} onClick={submitTest}>{busy ? t('Отправляем…') : t('Отправить ответы')}</button></div>
         </section>}
-        <footer><strong>Zaily Urpaq мектебі</strong><span>·</span> {t("Учебная платформа")} <span>·</span> {t("Реальные данные из PostgreSQL")}</footer>
+        <footer><strong>Zialy Urpaq мектебі</strong><span>·</span> {t("Учебная платформа")} <span>·</span> {t("Реальные данные из PostgreSQL")}</footer>
       </section>
     </main>
   );
