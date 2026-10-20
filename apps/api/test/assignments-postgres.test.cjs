@@ -142,4 +142,25 @@ test('PostgreSQL: simultaneous attempts/submits/grades preserve limits, ownershi
   const staffResults = await service.results(manual.id, teacher);
   assert.equal(staffResults.submissions.length, 1);
   assert.equal(staffResults.submissions[0].feedback, 'Good work. Keep showing your reasoning.');
+
+  // Exercise the return -> student revision -> resubmission path against PostgreSQL.
+  const returned = await service.returnSubmission(started.submission.id, 'Please add one more detail.', teacher);
+  assert.equal(returned.status, 'RETURNED');
+  assert.equal(returned.feedback, 'Please add one more detail.');
+  const reopened = await service.reopenReturned(started.submission.id, student);
+  assert.equal(reopened.submission.status, 'IN_PROGRESS');
+  assert.equal(reopened.assignment.id, manual.id);
+  assert.equal(reopened.answers.length, 2, 'Existing answers must survive reopening');
+  assert.ok(reopened.answers.every(answer => answer.textValue === 'Student answer'));
+  await service.saveAnswers(started.submission.id, {
+    answers: manual.questions.map(q => ({ questionId: q.id, textValue: `Revised answer for ${q.prompt}` })),
+  }, student);
+  const resubmitted = await service.submit(manual.id, started.submission.id, {
+    answers: manual.questions.map(q => ({ questionId: q.id, textValue: `Revised answer for ${q.prompt}` })),
+  }, student);
+  assert.equal(resubmitted.status, 'SUBMITTED');
+  assert.equal(resubmitted.totalScore, null, 'Manual work must return to the teacher queue after resubmission');
+  const revisedRows = await prisma.answer.findMany({ where: { submissionId: started.submission.id } });
+  assert.ok(revisedRows.every(answer => answer.textValue.startsWith('Revised answer for ')));
+
 });
