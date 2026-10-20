@@ -63,6 +63,15 @@ test('school LAN has persistent HTTPS and WSS configuration', () => {
   assert.match(installer, /lan-root-ca\.crt/u);
 });
 
+test('Windows installer finalization works without interactive certificate or desktop UI', () => {
+  assert.match(installer, /X509Store -ArgumentList @\('Root', 'CurrentUser'\)/u);
+  assert.match(installer, /if \(-not \$alreadyTrusted\) \{ \$rootStore\.Add\(\$lanCertificate\) \}/u);
+  assert.doesNotMatch(installer, /Import-Certificate -FilePath \$lanCertificateFile/u);
+  assert.match(installer, /catch \{\s*Write-Host 'Предупреждение: не удалось автоматически добавить сертификат HTTPS/u);
+  assert.match(installer, /catch \{\s*Write-Host 'Предупреждение: сервер запущен, но Windows не разрешила автоматически создать ярлыки/u);
+  assert.match(installer, /try \{\s*Start-Process -FilePath 'http:\/\/localhost:8080' -ErrorAction Stop\s*\} catch/u);
+});
+
 test('Windows Firewall opens only HTTPS and LiveKit ports to the private local subnet', () => {
   for (const [displayName, protocol, port] of [
     ['Zaily Urpaq School HTTPS', 'TCP', '8443'],
