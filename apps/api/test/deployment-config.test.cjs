@@ -18,6 +18,25 @@ test('Windows installation starts LiveKit as part of the school platform', () =>
   assert.match(installer, /@\('compose',\s*'--profile',\s*'media',\s*'-p',\s*\$composeProjectName/u);
 });
 
+test('API waits for both PostgreSQL databases before startup', () => {
+  assert.match(compose, /results-postgres:\s*\n\s+condition: service_healthy/u);
+  assert.match(compose, /postgres:\s*\n\s+condition: service_healthy/u);
+});
+
+test('Windows setup synchronizes credentials with both persistent PostgreSQL databases', () => {
+  assert.match(installer, /Set-DatabaseRolePassword -ContainerName \$postgresContainer -DatabaseName 'schoolcrm' -DesiredPassword \$dbPassword/u);
+  assert.match(installer, /Set-DatabaseRolePassword -ContainerName \$resultsContainer -DatabaseName 'schoolresults' -DesiredPassword \$dbPassword/u);
+  assert.match(installer, /resultsDatabaseReady/u);
+});
+
+test('Windows backup uses PowerShell-safe Docker execution and verifies both dumps', () => {
+  const backup = readFileSync(resolve(__dirname, '../../../packaging/windows/Backup.ps1'), 'utf8');
+  assert.match(backup, /function Invoke-DockerChecked/u);
+  assert.match(backup, /pg_restore', '--list'/u);
+  assert.match(backup, /Get-FileHash -LiteralPath \$backupFile -Algorithm SHA256/u);
+  assert.match(backup, /Get-FileHash -LiteralPath \$resultsBackupFile -Algorithm SHA256/u);
+});
+
 test('LiveKit signaling is routed through the web proxy and media has TCP and UDP listeners', () => {
   assert.match(caddy, /handle_path\s+\/livekit\*\s*\{\s*reverse_proxy\s+livekit:7880\s*\}/u);
   assert.match(compose, /"0\.0\.0\.0:7881:7881\/tcp"/u);
