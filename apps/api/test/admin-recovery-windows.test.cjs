@@ -32,6 +32,12 @@ test('admin recovery sends credentials over stdin and never writes passwords to 
   assert.doesNotMatch(recovery, /Set-Content[^\n]*\.env|WriteAllText\([^\n]*\.env/u);
 });
 
+test('installer does not claim submitted credentials were applied when accounts already exist', () => {
+  assert.match(installer, /ADMIN_CREDENTIALS_NOT_CHANGED/u);
+  assert.match(launcher, /adminCredentialsUnchanged/u);
+  assert.match(launcher, /пароль из этой формы не применялся/iu);
+});
+
 test('installer adds the administrator recovery shortcut without recreating user accounts', () => {
   assert.match(launcher, /"--reset-admin"/u);
   assert.match(launcher, /CreateShortcut\(shell, Path\.Combine\(desktop, "Zaily Urpaq - Восстановление пароля администратора\.lnk"\)/u);
