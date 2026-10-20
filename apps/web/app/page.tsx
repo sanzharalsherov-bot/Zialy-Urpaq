@@ -26,6 +26,14 @@ export default function Home() {
     'Язык':['Тіл','Language'],'УЧЕБНАЯ ПЛАТФОРМА':['ОҚУ ПЛАТФОРМАСЫ','LEARNING PLATFORM'],'Войти в систему':['Жүйеге кіру','Sign in'],'Одна платформа для заданий, ответов и учебных результатов.':['Тапсырмалар, жауаптар және оқу нәтижелеріне арналған бір платформа.','One place for assignments, answers, and learning results.'],'Преподаватель':['Мұғалім','Teacher'],'Ученик':['Оқушы','Student'],'Входим…':['Кіруде…','Signing in…'],'Войти':['Кіру','Sign in'],'ПЛАТФОРМА':['ПЛАТФОРМА','PLATFORM'],'Обзор':['Шолу','Overview'],'Тесты и задания':['Тесттер мен тапсырмалар','Tests and assignments'],'Результаты':['Нәтижелер','Results'],'Мои задания':['Менің тапсырмаларым','My assignments'],'Управление школой':['Мектепті басқару','School management'],'Выйти из системы ↗':['Жүйеден шығу ↗','Sign out ↗'],'Создать задание':['Тапсырма жасау','Create assignment'],'Администратор':['Әкімші','Administrator'],'Всё для обучения.':['Оқу үшін бәрі.','Everything for learning.'],'В одном месте.':['Бір жерде.','In one place.'],'Создавайте задания, проверяйте работы и отслеживайте учебный прогресс.':['Тапсырмалар жасап, жұмыстарды тексеріп, оқу барысын бақылаңыз.','Create assignments, grade work, and track learning progress.'],'Рабочее пространство':['Жұмыс кеңістігі','Workspace'],'Активные задания':['Белсенді тапсырмалар','Active assignments'],'Всего попыток':['Барлық әрекеттер','Total attempts'],'На проверке':['Тексерілуде','Awaiting review'],'Проверенные работы':['Тексерілген жұмыстар','Graded submissions'],'Добавить преподавателя':['Мұғалім қосу','Add teacher'],'Имя':['Аты','First name'],'Фамилия':['Тегі','Last name'],'Последние задания':['Соңғы тапсырмалар','Recent assignments'],'Состояние API':['API күйі','API status'],'Конструктор задания':['Тапсырма құрастырушысы','Assignment builder'],'Название задания':['Тапсырма атауы','Assignment title'],'Предмет':['Пән','Subject'],'Описание':['Сипаттама','Description'],'Отмена':['Болдырмау','Cancel'],'Сохранить и опубликовать':['Сақтау және жариялау','Save and publish'],'Доступные задания':['Қолжетімді тапсырмалар','Available assignments'],'Начать':['Бастау','Start'],'Отправить ответы':['Жауаптарды жіберу','Submit answers'],'Аналитика результатов':['Нәтижелер аналитикасы','Results analytics'],'ОТЧЁТ ПО КЛАССУ':['СЫНЫП ЕСЕБІ','CLASS REPORT'],'Сводка помогает увидеть общий прогресс и вопросы, требующие повторения.':['Жиынтық есеп жалпы үлгерімді және қайталауды қажет ететін сұрақтарды көрсетеді.','See overall progress and questions that may need review.'],'Отправлено работ':['Жіберілген жұмыстар','Submissions sent'],'из':['ішінен','of'],'попыток':['әрекет','attempts'],'Средний результат':['Орташа нәтиже','Average score'],'среди оценённых работ ·':['бағаланған жұмыстардан ·','among graded submissions ·'],'Ответов оценено':['Бағаланған жауаптар','Answers graded'],'по всем вопросам':['барлық сұрақ бойынша','across all questions'],'Успеваемость по вопросам':['Сұрақтар бойынша үлгерім','Performance by question'],'Доля набранных баллов среди оценённых ответов':['Бағаланған жауаптардағы жиналған ұпай үлесі','Earned points across graded answers'],'Вопрос':['Сұрақ','Question'],'баллов':['ұпай','points'],'Распределение результатов':['Нәтижелер үлестірімі','Score distribution'],'Доля от максимального балла по попытке':['Әрекеттегі ең жоғары балдың үлесі','Percent of maximum score per attempt'],'Диаграмма появится после оценивания ответов.':['Жауаптар бағаланғаннан кейін диаграмма көрсетіледі.','The chart will appear once answers are graded.'],'Распределение появится после выставления оценок.':['Бағалар қойылғаннан кейін үлестірім көрсетіледі.','The distribution will appear once submissions are graded.'],'Столбцы учитывают только ответы, которым уже начислены баллы. Более низкий процент показывает темы, которым может понадобиться дополнительное объяснение.':['Бағандар ұпай қойылған жауаптарды ғана есептейді. Төмен пайыз қосымша түсіндіру қажет тақырыптарды көрсетеді.','Bars include answers that have been scored. Lower percentages point to topics that may need more explanation.']
   };
   const extraPhrases: Record<string, [string, string]> = {
+    'Вернуть на исправление':['Қайта түзетуге қайтару','Return for revision'],
+    'Работа возвращена ученику на исправление':['Жұмыс оқушыға түзетуге қайтарылды','Work returned to the student for revision'],
+    'Работа возвращена на исправление':['Жұмыс түзетуге қайтарылды','Work returned for revision'],
+    'Исправьте ответы и отправьте работу повторно.':['Жауаптарды түзетіп, жұмысты қайта жіберіңіз.','Correct your answers and resubmit the work.'],
+    'Исправить работу':['Жұмысты түзету','Revise work'],
+    'Работа открыта для исправления. После изменений отправьте её повторно.':['Жұмыс түзету үшін ашылды. Өзгерістерден кейін қайта жіберіңіз.','The work is open for revision. Resubmit it after making changes.'],
+    'Не удалось вернуть работу':['Жұмысты қайтару мүмкін болмады','Could not return the work'],
+    'Не удалось открыть работу для исправления':['Жұмысты түзету үшін ашу мүмкін болмады','Could not reopen the work for revision'],
     'Войти по коду теста':['Тест коды бойынша кіру','Join with a test code'],
     'Настройки новых комнат':['Жаңа бөлме параметрлері','New room settings'],'Участников в лобби':['Лоббидегі қатысушылар','Lobby capacity'],'Длительность, минут':['Ұзақтығы, минут','Duration, minutes'],'Без ограничения времени':['Уақыт шектеусіз','No time limit'],'Новая комната':['Жаңа бөлме','New room'],'Код комнаты':['Бөлме коды','Room code'],'Участники':['Қатысушылар','Participants'],'Запустить сейчас':['Қазір іске қосу','Start now'],'Ожидание':['Күтуде','Waiting'],'Идёт тест':['Тест жүріп жатыр','Test in progress'],'Создана комната':['Бөлме құрылды','Room created'],'Не удалось создать комнату':['Бөлме жасау мүмкін болмады','Could not create room'],
     'Экспорт результатов CSV':['Нәтижелерді CSV ретінде экспорттау','Export results as CSV'],'Начало':['Басталу уақыты','Started at'],'Статус':['Күйі','Status'],'Попытка':['Әрекет','Attempt'],
@@ -633,6 +641,42 @@ export default function Home() {
     finally { submissionInFlight.current = false; setBusy(false); }
   };
 
+  const returnSubmission = async (item: any) => {
+    if (busy) return;
+    setBusy(true); setMessage('');
+    try {
+      await request(`/submissions/${item.id}/return`, { method: 'PATCH', body: JSON.stringify({
+        feedback: submissionFeedback[item.id] !== undefined ? submissionFeedback[item.id].trim() : (item.feedback ?? 'Исправьте работу и отправьте повторно'),
+      }) });
+      setMessage('Работа возвращена ученику на исправление');
+      setSelectedResults(await request(`/assignments/${selectedResults.assignment.id}/results`));
+      await refreshStaff();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось вернуть работу'); }
+    finally { setBusy(false); }
+  };
+
+  const reviseReturned = async (submissionId: string) => {
+    if (busy) return;
+    setBusy(true); setMessage('');
+    try {
+      const reopened = await request(`/student/submissions/${submissionId}/reopen`, { method: 'POST', body: JSON.stringify({}) });
+      const restored: Record<string, any> = {};
+      for (const answer of reopened.answers || []) {
+        const question = reopened.assignment.questions.find((q: any) => q.id === answer.questionId);
+        if (!question) continue;
+        if (question.type === 'NUMERIC') restored[answer.questionId] = answer.numericValue == null ? '' : String(answer.numericValue);
+        else if (question.type === 'SINGLE_CHOICE' || question.type === 'MULTIPLE_CHOICE') restored[answer.questionId] = answer.jsonValue ?? (question.type === 'MULTIPLE_CHOICE' ? [] : '');
+        else restored[answer.questionId] = answer.textValue ?? '';
+      }
+      setSelectedAssignment(reopened.assignment); setSubmission(reopened.submission); setAnswers(restored);
+      setStudentResult(null); setView('student'); setDraftStatus('saved');
+      lastAutosavedAnswers.current = {};
+      writeStorage(window.sessionStorage, ATTEMPT_KEY, JSON.stringify({ userId: user?.id, assignment: reopened.assignment, submission: reopened.submission, answers: restored }));
+      setMessage('Работа открыта для исправления. После изменений отправьте её повторно.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось открыть работу для исправления'); }
+    finally { setBusy(false); }
+  };
+
   const gradeSubmission = async (item: any) => {
     const answerRows = item.answers.filter((a: any) => isManualQuestion(a.question.type));
     if (!answerRows.length && item.status !== 'EXPIRED') { setMessage('В этой работе нет ответов, требующих ручной проверки'); return; }
@@ -701,7 +745,7 @@ export default function Home() {
 
   const deadlines = submission && selectedAssignment ? [
     selectedAssignment.timeLimitMinutes ? new Date(submission.startedAt).getTime() + selectedAssignment.timeLimitMinutes * 60000 : Infinity,
-    selectedAssignment.dueAt ? new Date(selectedAssignment.dueAt).getTime() : Infinity,
+    submission.finishReason === 'RESUBMISSION' ? Infinity : selectedAssignment.dueAt ? new Date(selectedAssignment.dueAt).getTime() : Infinity,
   ] : [Infinity];
   const deadline = Math.min(...deadlines);
   const timeRemaining = Number.isFinite(deadline) ? Math.max(0, Math.ceil((deadline - clock) / 1000)) : null;
@@ -821,7 +865,7 @@ export default function Home() {
   }, [timeRemaining, submission?.id, submission?.status, onlineRetry]);
 
   useEffect(() => {
-    if (!token || user?.role !== 'STUDENT' || !studentResult?.submissionId || studentResult.score !== null) return;
+    if (!token || user?.role !== 'STUDENT' || !studentResult?.submissionId || studentResult.score !== null || studentResult.status === 'RETURNED') return;
     const poll = async () => {
       try {
         const result = await request(`/student/submissions/${studentResult.submissionId}/result`);
@@ -1061,7 +1105,7 @@ export default function Home() {
                 </div>}
               </div>)}</div>
               {(s.status === 'EXPIRED' || s.answers.some((a: any) => isManualQuestion(a.question.type))) && <div className="manualReviewFooter"><div><b>{t("Проверка работы")}</b><p>{t(s.answers.some((a: any) => isManualQuestion(a.question.type)) ? 'Введите баллы за каждый текстовый ответ, затем сохраните оценку.' : 'Работа отправлена после окончания времени. Проверьте ответы и подтвердите оценку.')}</p><label className="teacherCommentField">Общий комментарий к работе<textarea maxLength={10000} disabled={busy} value={submissionFeedback[s.id] ?? s.feedback ?? ''} onChange={e => setSubmissionFeedback(old => ({ ...old, [s.id]: e.target.value }))} placeholder="Обратная связь для ученика" /></label></div><button className="primaryButton" disabled={busy} onClick={() => gradeSubmission(s)}>{busy ? t('Сохраняем…') : s.status === 'GRADED' ? t('Сохранить изменения') : t('Сохранить оценку')}</button></div>}
-              <div className="resultFoot"><span className={`status ${s.status === 'GRADED' ? '' : 'pending'}`}>{t(({ IN_PROGRESS: 'В процессе', SUBMITTED: 'Отправлено', UNDER_REVIEW: 'На проверке', GRADED: 'Проверено', EXPIRED: 'Время истекло', RETURNED: 'Возвращено' } as Record<string, string>)[s.status] || s.status)}</span>{s.feedback && <span className="muted">{s.feedback}</span>}</div>
+              <div className="resultFoot"><span className={`status ${s.status === 'GRADED' ? '' : 'pending'}`}>{t(({ IN_PROGRESS: 'В процессе', SUBMITTED: 'Отправлено', UNDER_REVIEW: 'На проверке', GRADED: 'Проверено', EXPIRED: 'Время истекло', RETURNED: 'Возвращено' } as Record<string, string>)[s.status] || s.status)}</span>{s.feedback && <span className="muted">{s.feedback}</span>}{['UNDER_REVIEW', 'GRADED', 'EXPIRED'].includes(s.status) && <button type="button" className="secondaryButton" disabled={busy} onClick={() => returnSubmission(s)}>{t('Вернуть на исправление')}</button>}</div>
             </article>)}
             {!selectedResults.submissions.length && <p className="emptyState">{t("Попыток пока нет.")}</p>}
           </>}
@@ -1087,6 +1131,7 @@ export default function Home() {
           {studentResult.finishReason === 'PROCTORING_VIOLATION_LIMIT' && <p className="proctorNotice" role="status">{t('Попытка завершена: три предупреждения о переключении вкладки. Сохранённые ответы проверены.')}</p>}
           {studentResult.score === null && <p className="helperText">{t('Текстовые ответы проверяет преподаватель. Результат обновится автоматически после проверки.')}</p>}
           <div className="studentResultKpis"><article><span>{t('Баллы')}</span><strong>{studentResult.score ?? '—'}</strong></article><article><span>{t('Место в рейтинге')}</span><strong>{studentResult.rank ? `#${studentResult.rank}` : '—'}</strong></article><article><span>{t('Правильных ответов')}</span><strong>{studentResult.correctCount ?? '—'}</strong></article><article><span>{t('Время прохождения')}</span><strong>{Math.floor((studentResult.durationMs || 0) / 60000)}:{String(Math.floor(((studentResult.durationMs || 0) % 60000) / 1000)).padStart(2, '0')}</strong></article></div>
+          {studentResult.status === 'RETURNED' && <div className="manualReviewFooter"><div><b>{t('Работа возвращена на исправление')}</b><p>{t('Исправьте ответы и отправьте работу повторно.')}</p></div><button className="primaryButton" disabled={busy} onClick={() => reviseReturned(studentResult.submissionId)}>{t('Исправить работу')}</button></div>}
           {studentResult.feedback && <div className="manualReviewFooter"><div><b>{t('Комментарий преподавателя')}</b><p>{studentResult.feedback}</p></div></div>}
           {studentResult.answers?.length > 0 && <section className="studentAnswerReview" aria-label={t('Проверка ответов')}>
             <h4>{t('Ответы и комментарии')}</h4>

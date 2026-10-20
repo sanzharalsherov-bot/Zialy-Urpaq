@@ -40,7 +40,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       const rows = await this.prisma.$queryRaw<Array<{ id: string; assignmentId: string }>>`
         SELECT s.id, s."assignmentId" FROM "Submission" s JOIN "Assignment" a ON a.id = s."assignmentId"
         WHERE s.status = 'IN_PROGRESS'::"SubmissionStatus" AND
-          ((a."timeLimitMinutes" IS NOT NULL AND s."startedAt" + a."timeLimitMinutes" * INTERVAL '1 minute' <= NOW()) OR a."dueAt" <= NOW())
+          ((a."timeLimitMinutes" IS NOT NULL AND s."startedAt" + a."timeLimitMinutes" * INTERVAL '1 minute' <= NOW()) OR (a."dueAt" <= NOW() AND s."finishReason" IS DISTINCT FROM 'RESUBMISSION'))
         ORDER BY s."startedAt" LIMIT 100`;
       for (let offset = 0; offset < rows.length; offset += 5) await Promise.all(rows.slice(offset, offset + 5).map(row => this.finalize(row.assignmentId, row.id, { answers: [] }).catch(error => {
         if (!(error instanceof NotFoundException)) console.error('Deadline finalization failed; retrying on next sweep');
@@ -98,7 +98,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       jsonValue: answer.jsonValue,
     }));
     return {
-      submission: { id: submission.id, status: submission.status, attemptNo: submission.attemptNo, startedAt: submission.startedAt },
+      submission: { id: submission.id, status: submission.status, attemptNo: submission.attemptNo, startedAt: submission.startedAt, finishReason: submission.finishReason },
       assignment: {
         id: assignment.id, title: assignment.title, description: assignment.description,
         timeLimitMinutes: assignment.timeLimitMinutes, dueAt: assignment.dueAt, totalPoints: assignment.totalPoints,
@@ -438,7 +438,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       if (!submission) throw new NotFoundException('Активная попытка не найдена');
       const elapsed = Date.now() - submission.startedAt.getTime();
       if ((submission.assignment.timeLimitMinutes !== null && elapsed >= submission.assignment.timeLimitMinutes * 60_000) ||
-          (submission.assignment.dueAt !== null && submission.assignment.dueAt.getTime() < Date.now())) {
+          (submission.finishReason !== 'RESUBMISSION' && submission.assignment.dueAt !== null && submission.assignment.dueAt.getTime() < Date.now())) {
         throw new BadRequestException('Время теста вышло');
       }
       if (new Set(dto.answers.map(answer => answer.questionId)).size !== dto.answers.length) throw new BadRequestException('Нельзя отправить несколько ответов на один вопрос');
@@ -525,7 +525,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
     const elapsedMs = Date.now() - submission.startedAt.getTime();
     const timedOut = (submission.assignment.timeLimitMinutes !== null &&
       elapsedMs >= submission.assignment.timeLimitMinutes * 60_000) ||
-      (submission.assignment.dueAt !== null && submission.assignment.dueAt.getTime() < Date.now());
+      (submission.finishReason !== 'RESUBMISSION' && submission.assignment.dueAt !== null && submission.assignment.dueAt.getTime() < Date.now());
     if (!user && !timedOut) throw new BadRequestException('Срок попытки ещё не истёк');
     const questionMap = new Map(submission.assignment.questions.map(q => [q.id, q]));
     const submittedAnswers = timedOut ? submission.answers.map(answer => ({
@@ -571,7 +571,7 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
         status: timedOut ? SubmissionStatus.EXPIRED : allAuto ? SubmissionStatus.GRADED : SubmissionStatus.UNDER_REVIEW,
         submittedAt: timedOut ? new Date(Math.min(
           submission.assignment.timeLimitMinutes !== null ? submission.startedAt.getTime() + submission.assignment.timeLimitMinutes * 60000 : Infinity,
-          submission.assignment.dueAt?.getTime() ?? Infinity,
+          submission.finishReason === 'RESUBMISSION' ? Infinity : submission.assignment.dueAt?.getTime() ?? Infinity,
         )) : new Date(),
         totalScore: allAuto ? roundedScore(autoScore) : null,
         gradedAt: allAuto ? new Date() : null,
@@ -756,6 +756,51 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
       },
     });
     return { assignment, submissions };
+  }
+
+  async returnSubmission(submissionId: string, feedback: string | undefined, user: AuthenticatedUser) {
+    this.requireStaff(user);
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
+      const submission = await tx.submission.findFirst({ where: { id: submissionId, assignment: this.staffScope(user) }, select: { id: true, status: true, assignmentId: true } });
+      if (!submission) throw new NotFoundException('Работа не найдена');
+      const returnableStatuses: SubmissionStatus[] = [SubmissionStatus.UNDER_REVIEW, SubmissionStatus.GRADED, SubmissionStatus.EXPIRED];
+      if (!returnableStatuses.includes(submission.status)) {
+        throw new BadRequestException('Можно вернуть только отправленную на проверку или проверенную работу');
+      }
+      const updated = await tx.submission.update({ where: { id: submissionId }, data: {
+        status: SubmissionStatus.RETURNED, feedback: feedback?.trim() || 'Исправьте работу и отправьте повторно',
+        totalScore: null, gradedAt: null, reviewerId: user.sub,
+      }});
+      await tx.auditLog.create({ data: { actorId: user.sub, action: 'SUBMISSION_RETURNED', entityType: 'Submission', entityId: submissionId, metadata: { assignmentId: submission.assignmentId } } });
+      await enqueueResultExport(tx, submissionId);
+      return updated;
+    });
+  }
+
+  async reopenReturned(submissionId: string, user: AuthenticatedUser) {
+    this.requireStudent(user);
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
+      const current = await tx.submission.findFirst({ where: { id: submissionId, studentIdentityKey: this.studentIdentityKey(user), status: SubmissionStatus.RETURNED }, select: { id: true } });
+      if (!current) throw new NotFoundException('Работа не найдена или не возвращена на исправление');
+      const submission = await tx.submission.update({
+        where: { id: submissionId },
+        data: { status: SubmissionStatus.IN_PROGRESS, startedAt: new Date(), submittedAt: null, totalScore: null, gradedAt: null, finishReason: 'RESUBMISSION' },
+        include: {
+          assignment: {
+            include: {
+              questions: {
+                orderBy: { position: 'asc' },
+                include: { options: { orderBy: { position: 'asc' } } },
+              },
+            },
+          },
+          answers: true,
+        },
+      });
+      return this.studentAssignmentPayload(submission.assignment, submission);
+    });
   }
 
   async grade(submissionId: string, dto: GradeSubmissionDto, user: AuthenticatedUser) {
