@@ -1058,6 +1058,26 @@ export default function Home() {
           {studentResult.finishReason === 'PROCTORING_VIOLATION_LIMIT' && <p className="proctorNotice" role="status">{t('Попытка завершена: три предупреждения о переключении вкладки. Сохранённые ответы проверены.')}</p>}
           {studentResult.score === null && <p className="helperText">{t('Текстовые ответы проверяет преподаватель. Результат обновится автоматически после проверки.')}</p>}
           <div className="studentResultKpis"><article><span>{t('Баллы')}</span><strong>{studentResult.score ?? '—'}</strong></article><article><span>{t('Место в рейтинге')}</span><strong>{studentResult.rank ? `#${studentResult.rank}` : '—'}</strong></article><article><span>{t('Правильных ответов')}</span><strong>{studentResult.correctCount ?? '—'}</strong></article><article><span>{t('Время прохождения')}</span><strong>{Math.floor((studentResult.durationMs || 0) / 60000)}:{String(Math.floor(((studentResult.durationMs || 0) % 60000) / 1000)).padStart(2, '0')}</strong></article></div>
+          {studentResult.feedback && <div className="manualReviewFooter"><div><b>{t('Комментарий преподавателя')}</b><p>{studentResult.feedback}</p></div></div>}
+          {studentResult.answers?.length > 0 && <section className="studentAnswerReview" aria-label={t('Проверка ответов')}>
+            <h4>{t('Ответы и комментарии')}</h4>
+            {studentResult.answers.map((answer: any, index: number) => {
+              const value = answer.numericValue !== null && answer.numericValue !== undefined
+                ? String(answer.numericValue)
+                : Array.isArray(answer.jsonValue)
+                  ? answer.jsonValue.map((id: string) => answer.question.options.find((option: any) => option.id === id)?.text ?? id).join(', ')
+                  : typeof answer.jsonValue === 'string'
+                    ? answer.question.options.find((option: any) => option.id === answer.jsonValue)?.text ?? answer.jsonValue
+                    : answer.textValue || '—';
+              return <article className="studentAnswerReviewRow" key={answer.question.id}>
+                <b>{index + 1}. {answer.question.prompt}</b>
+                <p>{t('Ваш ответ')}: {value}</p>
+                <p>{t('Баллы')}: {answer.awardedPoints ?? '—'} / {answer.question.points}</p>
+                {answer.isCorrect !== null && <span className={`status ${answer.isCorrect ? '' : 'pending'}`}>{answer.isCorrect ? t('Зачтено') : t('Не зачтено')}</span>}
+                {answer.teacherComment && <p className="muted">{t('Комментарий к ответу')}: {answer.teacherComment}</p>}
+              </article>;
+            })}
+          </section>}
           <h4>{t('Топ учеников')}</h4>{studentResult.top?.length ? studentResult.top.map((item: any) => <div className="leaderboardRow" key={item.rank}><b>#{item.rank}</b><span>{item.lastName} {item.firstName}</span><span>{item.score} {t('баллов')}</span><span>{item.correctCount} {t('правильных')}</span></div>) : <p className="emptyState">{t('Таблица лидеров появится после оценивания результатов.')}</p>}
         </section>}
         {!isStaff && submission?.status === 'IN_PROGRESS' && <StudentMonitor key={submission.id} token={token} submissionId={submission.id} language={language} />}
