@@ -81,7 +81,7 @@ test('release smoke check verifies private-LAN HTTPS without credentials or TLS 
   assert.match(smoke, /isPrivateIpv4\(base\.hostname\)/u);
   assert.match(smoke, /Only localhost or a private\/link-local IPv4 address is allowed/u);
   assert.match(smoke, /\/api\/health/u);
-  assert.match(smoke, /resultsDelivery\.pendingCount === 0/u);
+  assert.match(smoke, /delivery\.pendingCount === 0/u);
   assert.doesNotMatch(smoke, /rejectUnauthorized:\s*false/u);
   assert.doesNotMatch(smoke, /Authorization:/u);
   assert.match(smoke, /mediaVerified:\s*false/u);
