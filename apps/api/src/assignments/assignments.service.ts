@@ -583,6 +583,36 @@ export class AssignmentsService implements OnModuleInit, OnModuleDestroy {
     return { ...saved, timedOut, message: timedOut ? 'Время вышло. Ответы сохранены, но попытка отмечена как просроченная.' : allAuto ? 'Ответы проверены автоматически.' : 'Ответы отправлены преподавателю на проверку.' };
   }
 
+  async listStudentResults(user: AuthenticatedUser) {
+    this.requireStudent(user);
+    const rows = await this.prisma.submission.findMany({
+      where: {
+        studentIdentityKey: this.studentIdentityKey(user),
+        status: { notIn: [SubmissionStatus.WAITING, SubmissionStatus.IN_PROGRESS] },
+      },
+      orderBy: [{ submittedAt: 'desc' }, { startedAt: 'desc' }],
+      take: 100,
+      select: {
+        id: true, status: true, totalScore: true, submittedAt: true, startedAt: true,
+        feedback: true, finishReason: true, attemptNo: true,
+        assignment: { select: { id: true, title: true, subject: { select: { name: true } } } },
+      },
+    });
+    return rows.map(row => ({
+      submissionId: row.id,
+      assignmentId: row.assignment.id,
+      assignmentTitle: row.assignment.title,
+      subjectName: row.assignment.subject.name,
+      status: row.status,
+      score: row.totalScore === null ? null : Number(row.totalScore),
+      submittedAt: row.submittedAt,
+      startedAt: row.startedAt,
+      feedback: row.feedback,
+      finishReason: row.finishReason,
+      attemptNo: row.attemptNo,
+    }));
+  }
+
   async studentResult(submissionId: string, user: AuthenticatedUser) {
     this.requireStudent(user);
     const identityKey = this.studentIdentityKey(user);
