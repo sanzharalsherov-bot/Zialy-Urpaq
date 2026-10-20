@@ -147,6 +147,21 @@ test('unknown room code does not reveal whether another code exists', async () =
   await assert.rejects(() => service.joinRoom('999999', 'Different', 'Name'), error => error.getStatus() === 429);
 });
 
+test('invalid room-code attempts are blocked per device, not for every student behind one school IP', async () => {
+  const db = fakeJoinPrisma();
+  const service = new RoomsService(db);
+  const ip = '192.168.10.50';
+  const firstDevice = 'a'.repeat(64);
+  const secondDevice = 'b'.repeat(64);
+  for (let i = 0; i < 2; i++) {
+    await assert.rejects(() => service.joinRoom('999999', 'Student', 'One', undefined, ip, firstDevice), error => error.getStatus() === 404);
+    await assert.rejects(() => service.joinRoom('999999', 'Student', 'Two', undefined, ip, secondDevice), error => error.getStatus() === 404);
+  }
+  await assert.rejects(() => service.joinRoom('999999', 'Student', 'One', undefined, ip, firstDevice), error => error.getStatus() === 429);
+  await assert.rejects(() => service.joinRoom('999999', 'Student', 'Two', undefined, ip, secondDevice), error => error.getStatus() === 429);
+  assert.ok(db.audit.some(entry => entry.action === 'ROOM_CODE_REJECTED'));
+});
+
 test('running room rejects tokenless entry even when the supplied name matches the roster', async () => {
   const db = fakeJoinPrisma(); const service = new RoomsService(db);
   const first = await service.joinRoom('004271', 'Aruzhan', 'Sapar');
