@@ -383,6 +383,13 @@ if ($resetSchoolData -or -not (Test-Path $setupComplete)) {
   if ($stopApi.ExitCode -ne 0) { throw 'Не удалось остановить API перед очисткой. Данные не изменены; повторите установку.' }
   Clear-DatabaseContents -ContainerName $postgresContainer -DatabaseName 'schoolcrm'
   Clear-DatabaseContents -ContainerName $resultsContainer -DatabaseName 'schoolresults'
+  $emptyDatabaseProbe = Invoke-DockerProbe -DockerExe $dockerCli -Arguments @('exec', '-u', 'postgres', $postgresContainer, 'psql', '-U', 'schoolcrm', '-d', 'schoolcrm', '-Atc', 'SELECT count(*) FROM "User"')
+  if ($emptyDatabaseProbe.ExitCode -ne 0) { throw 'Не удалось проверить очистку школьной базы. API не запускался; повторите установку и проверьте подключение к PostgreSQL.' }
+  $emptyUserCount = 0
+  $emptyUserCountText = [string]($emptyDatabaseProbe.Output | Select-Object -First 1)
+  if (-not [int]::TryParse($emptyUserCountText.Trim(), [ref]$emptyUserCount) -or $emptyUserCount -ne 0) {
+    throw "Очистка не подтвердилась: в PostgreSQL до запуска API осталось аккаунтов ($emptyUserCountText). API остановлен, администратор не создавался."
+  }
   Write-Host 'Школьные аккаунты, задания, результаты и настройки очищены. Схемы и миграции сохранены.' -ForegroundColor Yellow
 }
 
