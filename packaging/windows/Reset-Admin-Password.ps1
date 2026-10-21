@@ -48,7 +48,7 @@ try {
 if ($apiContainerProbeExitCode -ne 0) {
   throw 'Не удалось проверить API-контейнеры Docker. Запустите Docker Desktop и повторите попытку. Пароль не изменён.'
 }
-$apiContainerIds = @($apiContainerProbe | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -match '^[a-f0-9]{12,64}
+$apiContainerIds = @($apiContainerProbe | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -match '^[a-f0-9]{12,64}$' } | Select-Object -Unique)
 
 # The fixed Node payload is stored as base64 so PowerShell never parses JavaScript syntax.
 # The email and password remain JSON input on stdin and are not exposed in process arguments.
