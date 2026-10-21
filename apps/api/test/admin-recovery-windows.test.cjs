@@ -67,6 +67,8 @@ test('clean setup removes previous accounts before creating the first admin', ()
   assert.match(installer, /\$emptyDatabaseProbe = Invoke-DockerProbe/u);
   assert.match(installer, /\$emptyUserCount -ne 0/u);
   assert.match(installer, /до запуска API осталось аккаунтов/u);
+  assert.match(installer, /после запуска API в базе появились аккаунты/iu);
+  assert.match(installer, /docker compose stop api/u);
   assert.match(installer, /SELECT count\(\*\) FROM "User"/u);
   assert.match(installer, /bootstrap-admin/u);
   assert.match(launcher, /resetSchoolData = resetSchoolData\.Checked/u);

@@ -417,7 +417,9 @@ if ($resetSchoolData -or -not (Test-Path $setupComplete)) {
   if (-not [int]::TryParse($userCountText.Trim(), [ref]$existingUserCount)) { throw 'База вернула некорректный результат проверки аккаунтов.' }
 
   if ($existingUserCount -gt 0) {
-    throw "После очистки в базе всё ещё есть аккаунты ($existingUserCount). Первоначальный администратор не создан; проверьте подключение к базе."
+    $stopApi = Invoke-DockerCommand @('compose', '-p', $composeProjectName, '-f', $composePath, 'stop', 'api')
+    $stopDetail = if ($stopApi.ExitCode -eq 0) { ' API остановлен.' } else { ' Не удалось остановить API автоматически; остановите его командой docker compose stop api.' }
+    throw "После запуска API в базе появились аккаунты ($existingUserCount), хотя очистка до запуска подтвердила ноль. Первоначальный администратор установщиком ещё не создавался.$stopDetail Проверьте, не запущен ли другой процесс, использующий эту же базу."
   } else {
     if ($password.Length -lt 12) { throw 'Пароль должен содержать не менее 12 символов. Повторно запустите установщик; запущенные данные сохранятся.' }
     if (-not $bootstrapKey) { throw 'Первый администратор ещё не создан, а ключ настройки уже отключён. Данные сохранены; обратитесь к администратору платформы.' }
