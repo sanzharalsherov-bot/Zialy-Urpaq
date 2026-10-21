@@ -80,6 +80,10 @@ export default function Home() {
   extraPhrases['Частые ошибки по вопросам'] = ['Сұрақтар бойынша жиі қателер', 'Common question errors'];
   extraPhrases['завершённых попыток'] = ['аяқталған әрекет', 'completed attempts'];
   extraPhrases['без ответа'] = ['жауапсыз', 'unanswered'];
+  extraPhrases['Ученик? Войти в тест по коду комнаты'] = ['Оқушысыз ба? Тестке бөлме коды арқылы кіріңіз', 'Student? Join a test with a room code'];
+  extraPhrases['Код комнаты выдаёт преподаватель'] = ['Бөлме кодын мұғалім береді', 'Your teacher provides the room code'];
+  extraPhrases['Войти в школьный кабинет по общему коду'] = ['Жалпы кодпен мектеп кабинетіне кіру', 'Sign in to the school portal with a school code'];
+  extraPhrases['Вход сотрудника'] = ['Қызметкерге кіру', 'Staff sign in'];
   extraPhrases['Попытка завершена: три предупреждения о переключении вкладки. Сохранённые ответы проверены.'] = ['Қойындыдан шығу туралы үшінші ескертуден кейін әрекет аяқталды. Сақталған жауаптар тексерілді.', 'The attempt ended after three tab-switch warnings. Saved answers were graded.'];
   Object.assign(extraPhrases, {
     'Сессия завершена': ['Сеанс аяқталды', 'Session ended'],
@@ -130,7 +134,7 @@ export default function Home() {
   };
   const [token, setToken] = useState('');
   const [user, setUser] = useState<User | null>(null);
-  const [loginMode, setLoginMode] = useState<'student' | 'staff'>('student');
+  const [loginMode, setLoginMode] = useState<'student' | 'staff'>('staff');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [studentCode, setStudentCode] = useState('');
@@ -911,9 +915,10 @@ export default function Home() {
           <div className="brand loginBrand"><img className="brandLogo" src="/brand/zaily-urpaq-logo.jpg" alt="Zialy Urpaq мектебі" /></div>
           <span className="eyebrow">{t('УЧЕБНАЯ ПЛАТФОРМА')}</span>
           <h1>{t('Войти в систему')}</h1>
+          <a className="roomLoginCard" href="/room"><span className="roomLoginIcon" aria-hidden="true">↗</span><span><strong>{t('Ученик? Войти в тест по коду комнаты')}</strong><small>{t('Код комнаты выдаёт преподаватель')}</small></span></a>
           <div className="loginSwitch" role="group" aria-label={t("Тип входа")}>
-            <button type="button" className={loginMode === 'student' ? 'selected' : ''} onClick={() => { setLoginMode('student'); setMessage(''); }}>{t('Ученик')}</button>
-            <button type="button" className={loginMode === 'staff' ? 'selected' : ''} onClick={() => { setLoginMode('staff'); setMessage(''); }}>{t('Преподаватель')} / {t('Администратор')}</button>
+            <button type="button" className={loginMode === 'staff' ? 'selected' : ''} onClick={() => { setLoginMode('staff'); setMessage(''); }}>{t('Вход сотрудника')}</button>
+            <button type="button" className={loginMode === 'student' ? 'selected' : ''} onClick={() => { setLoginMode('student'); setMessage(''); }}>{t('Ученик')} · {t('Общий код школы')}</button>
           </div>
           <p className="loginIntro">{t(loginMode === 'student' ? 'Введите общий код школы, имя и фамилию.' : 'Введите email и пароль, которые выдал администратор.')}</p>
           <form onSubmit={login} className="formStack">
@@ -928,7 +933,7 @@ export default function Home() {
           </form>
           {message && <p className="notice" role="status">{t(message)}</p>}
           <p className="loginFoot">{t(loginMode === 'student' ? 'Ученикам нужен общий код школы. Его выдаёт учитель или администратор.' : 'Нет аккаунта сотрудника? Обратитесь к администратору школы.')}</p>
-          {loginMode === 'student' && <a className="roomEntryDirectLink" href="/room">{t('Войти по коду теста')} ↗</a>}
+          {loginMode === 'staff' && <button className="schoolPortalLink" type="button" onClick={() => { setLoginMode('student'); setMessage(''); }}>{t('Войти в школьный кабинет по общему коду')}</button>}
         </section>
       </main>
     );
