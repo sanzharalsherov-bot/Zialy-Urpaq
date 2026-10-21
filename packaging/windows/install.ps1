@@ -62,6 +62,41 @@ function Invoke-DockerCommand([string[]]$Arguments) {
   return [pscustomobject]@{ Output = $output; ExitCode = $exitCode }
 }
 
+function Set-ExistingAdminPassword([string]$AdminEmail, [string]$AdminPassword) {
+  $recoveryScript = Join-Path $installDir 'packaging\windows\Reset-Admin-Password.ps1'
+  if (-not (Test-Path -LiteralPath $recoveryScript)) { throw 'Не найден безопасный инструмент восстановления пароля администратора. Пароль не изменён.' }
+  $powershell = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::System)) 'WindowsPowerShell\v1.0\powershell.exe'
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = $powershell
+  $startInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $recoveryScript + '"'
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardInput = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $startInfo
+  try {
+    if (-not $process.Start()) { throw 'Не удалось запустить безопасное восстановление пароля.' }
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $payload = @{ email = $AdminEmail; password = $AdminPassword } | ConvertTo-Json -Compress
+    $process.StandardInput.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload)))
+    $process.StandardInput.Close()
+    $process.WaitForExit()
+    $stdout = $stdoutTask.Result
+    $stderr = $stderrTask.Result
+    if ($process.ExitCode -ne 0 -or $stdout -notmatch 'ADMIN_PASSWORD_RESET_OK') {
+      if ($stderr -match 'Для введённого email не найдена активная учётная запись администратора') {
+        throw 'Введённый email не совпадает с активной учётной записью администратора. Пароль не изменён; проверьте email первого администратора.'
+      }
+      throw 'Не удалось обновить пароль существующего администратора. Пароль не изменён; проверьте email и повторите попытку.'
+    }
+    Write-Host "Пароль обновлён для существующей учётной записи администратора: $AdminEmail" -ForegroundColor Green
+    [Console]::Out.WriteLine('ADMIN_CREDENTIALS_UPDATED')
+  } finally { $process.Dispose() }
+}
+
 function Set-DatabaseRolePassword([string]$ContainerName, [string]$DatabaseName, [string]$DesiredPassword) {
   # The official PostgreSQL image allows local socket access inside the
   # container. Feed SQL over stdin so this generated secret is not added to
@@ -351,8 +386,13 @@ if (-not (Test-Path $setupComplete)) {
   if (-not [int]::TryParse($userCountText.Trim(), [ref]$existingUserCount)) { throw 'База вернула некорректный результат проверки аккаунтов.' }
 
   if ($existingUserCount -gt 0) {
-    Write-Host "В базе уже есть аккаунты ($existingUserCount). Сохраняю их без изменений; пароль из этой формы не применялся." -ForegroundColor Yellow
-    [Console]::Out.WriteLine('ADMIN_CREDENTIALS_NOT_CHANGED')
+    Write-Host "В базе уже есть аккаунты ($existingUserCount). Существующие аккаунты и данные школы будут сохранены." -ForegroundColor Yellow
+    if (-not [string]::IsNullOrWhiteSpace($password)) {
+      if ($password.Length -lt 12 -or [Text.Encoding]::UTF8.GetByteCount($password) -gt 72) { throw 'Пароль администратора должен содержать не менее 12 символов и не более 72 байт в UTF-8.' }
+      Set-ExistingAdminPassword -AdminEmail $email -AdminPassword $password
+    } else {
+      [Console]::Out.WriteLine('ADMIN_CREDENTIALS_NOT_CHANGED')
+    }
   } else {
     if ($password.Length -lt 12) { throw 'Пароль должен содержать не менее 12 символов. Повторно запустите установщик; запущенные данные сохранятся.' }
     if (-not $bootstrapKey) { throw 'Первый администратор ещё не создан, а ключ настройки уже отключён. Данные сохранены; обратитесь к администратору платформы.' }

@@ -58,10 +58,22 @@ test('admin recovery identifies the only active administrator when email is omit
   assert.match(embeddedNodeSource, /ADMIN_ACCOUNT_EMAIL:/u);
 });
 
-test('installer does not claim submitted credentials were applied when accounts already exist', () => {
+test('installer applies a supplied password only through local recovery for an existing admin', () => {
+  assert.match(installer, /Set-ExistingAdminPassword -AdminEmail \$email -AdminPassword \$password/u);
+  assert.match(installer, /process\.StandardInput\.Write\(\[Convert\]::ToBase64String/u);
+  assert.match(installer, /ADMIN_CREDENTIALS_UPDATED/u);
   assert.match(installer, /ADMIN_CREDENTIALS_NOT_CHANGED/u);
-  assert.match(launcher, /adminCredentialsUnchanged/u);
-  assert.match(launcher, /пароль из формы обновления не применялся/iu);
+  assert.match(launcher, /adminCredentialsUpdated/u);
+  assert.match(launcher, /Новый пароль применён к существующей учётной записи администратора/u);
+  assert.match(recovery, /Для введённого email не найдена активная учётная запись администратора/u);
+});
+
+test('installer never creates a duplicate admin when the database already has accounts', () => {
+  assert.match(installer, /ADMIN_CREDENTIALS_NOT_CHANGED/u);
+  assert.match(installer, /if \(\$existingUserCount -gt 0\)/u);
+  const existingAccountsBlock = installer.match(/if \(\$existingUserCount -gt 0\) \{([\s\S]*?)\n  \} else \{/u)?.[1] ?? '';
+  assert.match(existingAccountsBlock, /Set-ExistingAdminPassword/u);
+  assert.doesNotMatch(existingAccountsBlock, /bootstrap-admin/u);
 });
 
 test('installer adds the administrator recovery shortcut without recreating user accounts', () => {
@@ -71,7 +83,7 @@ test('installer adds the administrator recovery shortcut without recreating user
   assert.match(launcher, /new AdminRecoveryForm\(Path\.Combine\(destination/u);
   assert.match(installer, /if \(-not \(Test-Path \$setupComplete\)\)/u);
   assert.match(installer, /if \(\$existingUserCount -gt 0\)/u);
-  assert.match(installer, /Сохраняю их без изменений/u);
+  assert.match(installer, /Существующие аккаунты и данные школы будут сохранены/u);
 });
 
 

@@ -577,11 +577,14 @@ internal sealed class InstallerForm : Form
             status.ForeColor = Color.FromArgb(35, 130, 85);
             string addressText = addresses.ToString().Trim();
             bool adminCredentialsUnchanged = diagnostics.ToString().Contains("ADMIN_CREDENTIALS_NOT_CHANGED");
+            bool adminCredentialsUpdated = diagnostics.ToString().Contains("ADMIN_CREDENTIALS_UPDATED");
             bool certificateTrustPending = diagnostics.ToString().Contains("CERTIFICATE_TRUST_PENDING");
             bool cloudflareHealthPending = diagnostics.ToString().Contains("CLOUDFLARE_HEALTH_PENDING");
             hint.Text = (String.IsNullOrWhiteSpace(addressText) ? "Сайт откроется в браузере." : addressText)
                 + (adminCredentialsUnchanged
-                    ? "\r\nСуществующие аккаунты сохранены. Пароль из формы обновления не применялся. Используйте восстановление администратора."
+                    ? "\r\nСуществующие аккаунты сохранены. Пароль не менялся. Для его смены укажите email администратора и новый пароль."
+                    : adminCredentialsUpdated
+                        ? "\r\nНовый пароль применён к существующей учётной записи администратора: " + adminEmailUsed
                     : (String.IsNullOrWhiteSpace(adminEmailUsed) ? "" : "\r\nВход администратора: " + adminEmailUsed)
                       + (String.IsNullOrWhiteSpace(studentAccessCodeUsed) ? "" : "\r\nОбщий код учеников: " + studentAccessCodeUsed))
                 + (certificateTrustPending ? "\r\nВнимание: HTTPS-сертификат не добавлен автоматически. См. сообщение о сертификате." : "")
