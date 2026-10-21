@@ -16,6 +16,7 @@ test('Cloudflare configuration stores WSS signaling and preserves LAN media sett
   execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-EnvFile', envFile, '-Hostname', 'school.example.kz', '-TunnelToken', 'opaque-test-token-12345678901234567890='], { stdio: 'pipe' });
   const content = readFileSync(envFile, 'utf8');
   assert.match(content, /^CLOUDFLARE_TUNNEL_TOKEN="opaque-test-token-12345678901234567890="$/mu);
+  assert.match(content, /^WEB_ORIGIN="https:\/\/school\.example\.kz"$/mu);
   assert.match(content, /^LIVEKIT_PUBLIC_URL="wss:\/\/school\.example\.kz\/livekit"$/mu);
   assert.match(content, /^LIVEKIT_NODE_IP="192\.168\.1\.25"$/mu);
   assert.match(content, /^LIVEKIT_API_SECRET="existing-secret-value-with-at-least-32-chars"$/mu);

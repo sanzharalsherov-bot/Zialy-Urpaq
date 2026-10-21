@@ -144,6 +144,10 @@ internal sealed class InstallerForm : Form
     private readonly TextBox password = new TextBox();
     private readonly TextBox confirmPassword = new TextBox();
     private readonly TextBox studentAccessCode = new TextBox();
+    private readonly CheckBox configureCloudflare = new CheckBox();
+    private readonly TextBox cloudflareHostname = new TextBox();
+    private readonly TextBox cloudflareToken = new TextBox();
+    private readonly Panel cloudflarePanel = new Panel();
     private readonly CheckBox createDesktopShortcut = new CheckBox();
     private readonly Label installPathPreview = new Label();
     private readonly Panel credentialsPanel = new Panel();
@@ -152,6 +156,7 @@ internal sealed class InstallerForm : Form
     private readonly ProgressBar progress = new ProgressBar();
     private readonly Button installButton = new Button();
     private readonly Button detailsButton = new Button();
+    private readonly Button recoverAdminButton = new Button();
     private readonly System.Windows.Forms.Timer uiTimer = new System.Windows.Forms.Timer();
     private readonly ConcurrentQueue<string> messages = new ConcurrentQueue<string>();
     private readonly StringBuilder diagnostics = new StringBuilder();
@@ -170,9 +175,9 @@ internal sealed class InstallerForm : Form
     {
         Text = "Установка Zaily Urpaq";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(800, 770);
-        MinimumSize = new Size(800, 770);
-        MaximumSize = new Size(800, 770);
+        ClientSize = new Size(800, 940);
+        MinimumSize = new Size(800, 940);
+        MaximumSize = new Size(800, 940);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         BackColor = Color.FromArgb(247, 245, 248);
@@ -194,7 +199,7 @@ internal sealed class InstallerForm : Form
         header.Controls.Add(new Label { Text = "Один компьютер станет сервером для учителей и учеников", Font = new Font("Segoe UI", 9.5f), ForeColor = Muted, AutoSize = true, Location = new Point(214, 64) });
         Controls.Add(header);
 
-        var card = new Panel { Bounds = new Rectangle(30, 110, 740, 650), BackColor = Color.White, Padding = new Padding(32) };
+        var card = new Panel { Bounds = new Rectangle(30, 110, 740, 810), BackColor = Color.White, Padding = new Padding(32) };
         card.Paint += delegate(object sender, PaintEventArgs e) { ControlPaint.DrawBorder(e.Graphics, card.ClientRectangle, Border, ButtonBorderStyle.Solid); };
         Controls.Add(card);
 
@@ -243,28 +248,55 @@ internal sealed class InstallerForm : Form
         createDesktopShortcut.ForeColor = Ink;
         card.Controls.Add(createDesktopShortcut);
 
-        var note = new Label { Text = "Ученики входят по коду, имени и фамилии. Установщик настроит Docker и сайт; пароль не попадёт в логи.", ForeColor = Muted, AutoSize = false, Bounds = new Rectangle(32, 464, 670, 34) };
+        recoverAdminButton.Text = "Не могу войти? Восстановить администратора";
+        recoverAdminButton.Bounds = new Rectangle(365, 432, 337, 32);
+        recoverAdminButton.FlatStyle = FlatStyle.Flat;
+        recoverAdminButton.ForeColor = Purple;
+        recoverAdminButton.Visible = false;
+        recoverAdminButton.Click += RecoverAdmin;
+        card.Controls.Add(recoverAdminButton);
+
+        configureCloudflare.Text = "Настроить публичный доступ Cloudflare сейчас (необязательно)";
+        configureCloudflare.AutoSize = true;
+        configureCloudflare.Location = new Point(32, 474);
+        configureCloudflare.ForeColor = Ink;
+        configureCloudflare.CheckedChanged += delegate { cloudflarePanel.Enabled = configureCloudflare.Checked; };
+        card.Controls.Add(configureCloudflare);
+
+        cloudflarePanel.Bounds = new Rectangle(32, 502, 670, 92);
+        cloudflarePanel.Enabled = false;
+        card.Controls.Add(cloudflarePanel);
+        AddFieldLabel(cloudflarePanel, "Домен Cloudflare (например, school.example.kz)", 0);
+        AddFieldLabel(cloudflarePanel, "Токен Cloudflare Tunnel", 0, 343);
+        AddInput(cloudflarePanel, cloudflareHostname, 22, 22, 34, 300);
+        AddInput(cloudflarePanel, cloudflareToken, 365, 22, 34, 300);
+        cloudflareToken.UseSystemPasswordChar = true;
+
+        var cloudflareNote = new Label { Text = "Для внешнего доступа нужны домен и Tunnel Token из Cloudflare. Без них сайт сразу работает в школьной сети; после установки ничего вводить не нужно.", ForeColor = Muted, AutoSize = false, Bounds = new Rectangle(33, 595, 670, 32) };
+        card.Controls.Add(cloudflareNote);
+
+        var note = new Label { Text = "Ученики входят в тест по коду комнаты от учителя. Учитель и администратор — по email и паролю.", ForeColor = Muted, AutoSize = false, Bounds = new Rectangle(32, 630, 670, 28) };
         card.Controls.Add(note);
 
         status.Text = "Готов к установке";
         status.Font = new Font("Segoe UI", 10, FontStyle.Bold);
         status.ForeColor = Ink;
         status.AutoSize = false;
-        status.Bounds = new Rectangle(32, 500, 570, 24);
+        status.Bounds = new Rectangle(32, 663, 570, 24);
         card.Controls.Add(status);
         hint.Text = "При первом запуске потребуется интернет. Docker может попросить принять лицензию.";
         hint.ForeColor = Muted;
         hint.AutoSize = false;
-        hint.Bounds = new Rectangle(32, 523, 670, 24);
+        hint.Bounds = new Rectangle(32, 688, 670, 42);
         card.Controls.Add(hint);
-        progress.Bounds = new Rectangle(32, 553, 670, 12);
+        progress.Bounds = new Rectangle(32, 734, 670, 12);
         progress.Style = ProgressBarStyle.Marquee;
         progress.MarqueeAnimationSpeed = 22;
         progress.Visible = false;
         card.Controls.Add(progress);
 
         installButton.Text = "Установить платформу";
-        installButton.Bounds = new Rectangle(432, 602, 270, 44);
+        installButton.Bounds = new Rectangle(432, 758, 270, 44);
         installButton.BackColor = Purple;
         installButton.ForeColor = Color.White;
         installButton.FlatStyle = FlatStyle.Flat;
@@ -275,7 +307,7 @@ internal sealed class InstallerForm : Form
         card.Controls.Add(installButton);
 
         detailsButton.Text = "Показать сведения";
-        detailsButton.Bounds = new Rectangle(32, 609, 170, 30);
+        detailsButton.Bounds = new Rectangle(32, 765, 170, 30);
         detailsButton.FlatStyle = FlatStyle.Flat;
         detailsButton.FlatAppearance.BorderSize = 0;
         detailsButton.ForeColor = Muted;
@@ -349,9 +381,10 @@ internal sealed class InstallerForm : Form
             installPathPreview.Text = "";
         }
         credentialsPanel.Enabled = !existingInstall;
+        recoverAdminButton.Visible = existingInstall;
         if (existingInstall)
         {
-            hint.Text = "Существующая установка: база и аккаунты сохранятся. Ярлык можно создать повторно.";
+            hint.Text = "Существующая установка: база и аккаунты сохранятся. Если не получается войти, используйте восстановление администратора.";
             installButton.Text = "Обновить и запустить";
         }
         else
@@ -379,6 +412,13 @@ internal sealed class InstallerForm : Form
         string adminLastName = lastName.Text.Trim();
         string adminPassword = password.Text;
         string accessCode = studentAccessCode.Text.Trim();
+        string hostname = cloudflareHostname.Text.Trim();
+        string tunnelToken = cloudflareToken.Text.Trim();
+        if (configureCloudflare.Checked && (String.IsNullOrWhiteSpace(hostname) || String.IsNullOrWhiteSpace(tunnelToken)))
+        {
+            ShowValidation("Для Cloudflare укажите домен и Tunnel Token. Для доступа только в школе снимите галочку.", String.IsNullOrWhiteSpace(hostname) ? cloudflareHostname : cloudflareToken);
+            return;
+        }
         if (!existingInstall)
         {
             try { new System.Net.Mail.MailAddress(adminEmail); }
@@ -386,11 +426,12 @@ internal sealed class InstallerForm : Form
             if (adminFirstName.Length == 0) { ShowValidation("Укажите имя администратора.", firstName); return; }
             if (adminLastName.Length == 0) { ShowValidation("Укажите фамилию администратора.", lastName); return; }
             if (adminPassword.Length < 12) { ShowValidation("Пароль должен содержать не менее 12 символов.", password); return; }
+            if (Encoding.UTF8.GetByteCount(adminPassword) > 72) { ShowValidation("Пароль слишком длинный в UTF-8. Допустимо не более 72 байт.", password); return; }
             if (adminPassword != confirmPassword.Text) { ShowValidation("Пароли не совпадают.", confirmPassword); return; }
             if (accessCode.Length < 6 || accessCode.Length > 64) { ShowValidation("Общий код учеников должен содержать от 6 до 64 символов.", studentAccessCode); return; }
         }
 
-        var config = new SetupConfig { installDir = path, email = adminEmail, firstName = adminFirstName, lastName = adminLastName, password = adminPassword, studentAccessCode = accessCode, createDesktopShortcut = createDesktopShortcut.Checked };
+        var config = new SetupConfig { installDir = path, email = adminEmail, firstName = adminFirstName, lastName = adminLastName, password = adminPassword, studentAccessCode = accessCode, createDesktopShortcut = createDesktopShortcut.Checked, configureCloudflare = configureCloudflare.Checked, cloudflareHostname = hostname, cloudflareToken = tunnelToken };
         pendingConfig = config;
         installationPath = path;
         adminEmailUsed = adminEmail;
@@ -398,6 +439,7 @@ internal sealed class InstallerForm : Form
         password.Clear();
         confirmPassword.Clear();
         studentAccessCode.Clear();
+        cloudflareToken.Clear();
         SetInstallingState();
         uiTimer.Start();
         ThreadPool.QueueUserWorkItem(delegate { RunPowerShell(config); });
@@ -409,6 +451,16 @@ internal sealed class InstallerForm : Form
         target.Focus();
     }
 
+    private void RecoverAdmin(object sender, EventArgs e)
+    {
+        if (installationStarted) return;
+        string destination;
+        try { destination = ResolveInstallDirectory(folder.Text); }
+        catch { ShowValidation("Не удалось определить папку установленной платформы.", folder); return; }
+        using (var recovery = new AdminRecoveryForm(Path.Combine(destination, "packaging\\windows\\Reset-Admin-Password.ps1")))
+            recovery.ShowDialog(this);
+    }
+
     private void SetInstallingState()
     {
         installationStarted = true;
@@ -416,6 +468,9 @@ internal sealed class InstallerForm : Form
         installButton.Text = "Выполняется установка…";
         folder.Enabled = false;
         credentialsPanel.Enabled = false;
+        cloudflarePanel.Enabled = false;
+        configureCloudflare.Enabled = false;
+        recoverAdminButton.Enabled = false;
         status.Text = "Подготавливаю установку…";
         hint.Text = "Не выключайте компьютер. Docker может попросить принять лицензию.";
         progress.Visible = true;
@@ -500,6 +555,9 @@ internal sealed class InstallerForm : Form
         installButton.Enabled = true;
         folder.Enabled = true;
         credentialsPanel.Enabled = !existingInstall;
+        cloudflarePanel.Enabled = configureCloudflare.Checked;
+        configureCloudflare.Enabled = true;
+        recoverAdminButton.Enabled = true;
         installationStarted = false;
         detailsButton.Visible = !exit.Value;
         if (exit.Value)
@@ -508,6 +566,7 @@ internal sealed class InstallerForm : Form
             password.Clear();
             confirmPassword.Clear();
             studentAccessCode.Clear();
+            cloudflareToken.Clear();
             try { CreateLauncherShortcuts(); }
             catch (Exception ex)
             {
@@ -519,15 +578,17 @@ internal sealed class InstallerForm : Form
             string addressText = addresses.ToString().Trim();
             bool adminCredentialsUnchanged = diagnostics.ToString().Contains("ADMIN_CREDENTIALS_NOT_CHANGED");
             bool certificateTrustPending = diagnostics.ToString().Contains("CERTIFICATE_TRUST_PENDING");
+            bool cloudflareHealthPending = diagnostics.ToString().Contains("CLOUDFLARE_HEALTH_PENDING");
             hint.Text = (String.IsNullOrWhiteSpace(addressText) ? "Сайт откроется в браузере." : addressText)
                 + (adminCredentialsUnchanged
-                    ? "\r\nСуществующие аккаунты сохранены. Пароль из этой формы не применялся. Используйте ярлык восстановления пароля администратора."
+                    ? "\r\nСуществующие аккаунты сохранены. Пароль из формы обновления не применялся. Используйте восстановление администратора."
                     : (String.IsNullOrWhiteSpace(adminEmailUsed) ? "" : "\r\nВход администратора: " + adminEmailUsed)
                       + (String.IsNullOrWhiteSpace(studentAccessCodeUsed) ? "" : "\r\nОбщий код учеников: " + studentAccessCodeUsed))
                 + (certificateTrustPending ? "\r\nВнимание: HTTPS-сертификат не добавлен автоматически. См. сообщение о сертификате." : "")
+                + (cloudflareHealthPending ? "\r\nСайт в школьной сети работает, но Cloudflare не прошёл проверку. Сведения сохранены в диагностике." : "")
                 + (String.IsNullOrWhiteSpace(launcherWarning) ? "" : "\r\n" + launcherWarning);
             hint.Height = 72;
-            hint.ForeColor = certificateTrustPending ? Color.DarkOrange : Color.FromArgb(35, 130, 85);
+            hint.ForeColor = certificateTrustPending || cloudflareHealthPending ? Color.DarkOrange : Color.FromArgb(35, 130, 85);
             installButton.Text = "Закрыть";
             installButton.Click -= StartInstallation;
             installButton.Click += delegate { Close(); };
@@ -633,6 +694,9 @@ internal sealed class InstallerForm : Form
         public string password { get; set; }
         public string studentAccessCode { get; set; }
         public bool createDesktopShortcut { get; set; }
+        public bool configureCloudflare { get; set; }
+        public string cloudflareHostname { get; set; }
+        public string cloudflareToken { get; set; }
     }
 }
 
@@ -655,142 +719,6 @@ internal sealed class DetailsForm : Form
         Controls.Add(buttons);
         AcceptButton = close;
     }
-}
-
-internal sealed class CloudflareForm : Form
-{
-    private readonly TextBox hostname = new TextBox();
-    private readonly TextBox token = new TextBox();
-    private readonly Label status = new Label();
-    private readonly Button connect = new Button();
-    private readonly Button details = new Button();
-    private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
-    private readonly StringBuilder output = new StringBuilder();
-    private readonly string script;
-    private Process process;
-
-    public CloudflareForm(string scriptPath)
-    {
-        script = scriptPath;
-        Text = "Cloudflare Tunnel — Zaily Urpaq";
-        StartPosition = FormStartPosition.CenterScreen;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        ClientSize = new Size(560, 334);
-        BackColor = Color.White;
-        Font = new Font("Segoe UI", 9.5f);
-
-        Controls.Add(new Label { Text = "Подключение Cloudflare Tunnel", Font = new Font("Segoe UI", 15, FontStyle.Bold), ForeColor = Color.FromArgb(39, 27, 49), AutoSize = true, Location = new Point(24, 20) });
-        Controls.Add(new Label { Text = "В Cloudflare создайте Tunnel и Public Hostname для http://caddy:80. Для сайта нужен домен школы.", ForeColor = Color.FromArgb(124, 113, 132), AutoSize = false, Bounds = new Rectangle(26, 58, 510, 42) });
-        Controls.Add(new Label { Text = "Публичный адрес (например, tests.school.kz)", ForeColor = Color.FromArgb(124, 113, 132), AutoSize = true, Location = new Point(26, 105) });
-        hostname.Bounds = new Rectangle(26, 128, 510, 30);
-        hostname.Font = new Font("Segoe UI", 10);
-        Controls.Add(hostname);
-        Controls.Add(new Label { Text = "Токен Cloudflare Tunnel", ForeColor = Color.FromArgb(124, 113, 132), AutoSize = true, Location = new Point(26, 168) });
-        token.Bounds = new Rectangle(26, 191, 510, 30);
-        token.UseSystemPasswordChar = true;
-        token.Font = new Font("Segoe UI", 10);
-        Controls.Add(token);
-        status.Text = "Токен хранится в конфигурации с ограниченным доступом. WSS пойдёт через Cloudflare; видео проверяется по школьной сети.";
-        status.ForeColor = Color.FromArgb(124, 113, 132);
-        status.AutoSize = false;
-        status.Bounds = new Rectangle(26, 231, 510, 42);
-        Controls.Add(status);
-
-        connect.Text = "Подключить";
-        connect.Bounds = new Rectangle(366, 288, 170, 32);
-        connect.BackColor = Color.FromArgb(91, 22, 107);
-        connect.ForeColor = Color.White;
-        connect.FlatStyle = FlatStyle.Flat;
-        connect.Click += ConnectTunnel;
-        Controls.Add(connect);
-        details.Text = "Показать сведения";
-        details.Bounds = new Rectangle(26, 288, 160, 32);
-        details.FlatStyle = FlatStyle.Flat;
-        details.Visible = false;
-        details.Click += delegate { MessageBox.Show(this, output.ToString(), "Сведения", MessageBoxButtons.OK, MessageBoxIcon.Information); };
-        Controls.Add(details);
-        timer.Interval = 300;
-        timer.Tick += CheckProcess;
-        FormClosing += delegate(object sender, FormClosingEventArgs e) { if (process != null && !process.HasExited) { e.Cancel = true; MessageBox.Show(this, "Дождитесь завершения подключения.", "Подключение выполняется", MessageBoxButtons.OK, MessageBoxIcon.Information); } };
-    }
-
-    private void ConnectTunnel(object sender, EventArgs e)
-    {
-        if (String.IsNullOrWhiteSpace(hostname.Text)) { MessageBox.Show(this, "Введите Public Hostname из Cloudflare, например tests.school.kz.", "Нужен адрес школы", MessageBoxButtons.OK, MessageBoxIcon.Information); hostname.Focus(); return; }
-        string requestedHostname = hostname.Text.Trim().TrimEnd('.');
-        if (requestedHostname.EndsWith(".duckdns.org", StringComparison.OrdinalIgnoreCase) || String.Equals(requestedHostname, "duckdns.org", StringComparison.OrdinalIgnoreCase))
-        {
-            MessageBox.Show(this, "zailyurpaq.duckdns.org — это домен DuckDNS, а не зона, управляемая Cloudflare. Cloudflare Tunnel не сможет использовать его как Public Hostname. Закройте это окно; мы оставим бесплатный DuckDNS для отдельной настройки.", "Неподдерживаемый домен", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            hostname.Focus();
-            return;
-        }
-        if (String.IsNullOrWhiteSpace(token.Text)) { MessageBox.Show(this, "Вставьте Tunnel Token из Cloudflare.", "Нужен токен", MessageBoxButtons.OK, MessageBoxIcon.Information); token.Focus(); return; }
-        if (!File.Exists(script)) { MessageBox.Show(this, "Не найден компонент настройки Cloudflare. Переустановите платформу.", "Zaily Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
-        try
-        {
-            var start = InstallerApp.CreateHiddenPowerShell(script);
-            start.RedirectStandardInput = true;
-            start.RedirectStandardOutput = true;
-            start.RedirectStandardError = true;
-            process = new Process { StartInfo = start };
-            process.OutputDataReceived += CaptureOutput;
-            process.ErrorDataReceived += CaptureOutput;
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            var config = new JavaScriptSerializer().Serialize(new CloudflareConfig { token = token.Text.Trim(), hostname = hostname.Text.Trim() });
-            process.StandardInput.Write(Convert.ToBase64String(Encoding.UTF8.GetBytes(config)));
-            process.StandardInput.Close();
-            token.Clear();
-            token.Enabled = false;
-            hostname.Enabled = false;
-            connect.Enabled = false;
-            connect.Text = "Подключаю…";
-            status.Text = "Запускаю защищённое подключение. Это может занять минуту…";
-            status.ForeColor = Color.FromArgb(124, 113, 132);
-            timer.Start();
-        }
-        catch (Exception ex) { MessageBox.Show(this, "Не удалось запустить подключение.\r\n" + ex.Message, "Zaily Urpaq", MessageBoxButtons.OK, MessageBoxIcon.Error); }
-    }
-
-    private void CaptureOutput(object sender, DataReceivedEventArgs e)
-    {
-        if (String.IsNullOrWhiteSpace(e.Data)) return;
-        lock (output) { if (output.Length < 8000) output.AppendLine(e.Data); }
-    }
-
-    private void CheckProcess(object sender, EventArgs e)
-    {
-        if (process == null || !process.HasExited) return;
-        process.WaitForExit();
-        timer.Stop();
-        connect.Text = "Подключить";
-        var publicAddressReady = output.ToString().Contains("PUBLIC_HEALTH_OK:");
-        var publicAddressPending = output.ToString().Contains("PUBLIC_HEALTH_PENDING:");
-        details.Visible = process.ExitCode != 0 || publicAddressPending;
-        status.Text = process.ExitCode != 0
-            ? "Не удалось запустить Tunnel. Нажмите «Показать сведения»."
-            : publicAddressReady
-                ? "HTTPS и API доступны снаружи. Видеопоток ещё проверьте в школьной сети."
-                : "Tunnel запущен, но адрес не прошёл HTTPS-проверку. Нажмите «Показать сведения».";
-        status.ForeColor = process.ExitCode != 0 ? Color.Firebrick : publicAddressReady ? Color.FromArgb(35, 130, 85) : Color.DarkOrange;
-        if (process.ExitCode == 0)
-        {
-            var message = publicAddressReady
-                ? "Cloudflare Tunnel работает, адрес школы прошёл HTTPS-проверку. Проверьте передачу видео с телефона или компьютера в школьной сети."
-                : "Tunnel-контейнер запущен, но публичный адрес пока не отвечает. В Cloudflare проверьте состояние Tunnel и Public Hostname → http://caddy:80. После этого повторите настройку с Tunnel Token.";
-            connect.Enabled = !publicAddressReady;
-            connect.Text = publicAddressReady ? "Подключено" : "Повторить проверку";
-            token.Enabled = !publicAddressReady;
-            hostname.Enabled = !publicAddressReady;
-            MessageBox.Show(this, message, publicAddressReady ? "Подключение проверено" : "Нужна проверка адреса", MessageBoxButtons.OK, publicAddressReady ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
-        }
-        else { connect.Enabled = true; token.Enabled = true; hostname.Enabled = true; }
-    }
-
-    private sealed class CloudflareConfig { public string token { get; set; } public string hostname { get; set; } }
 }
 
 internal sealed class AdminRecoveryForm : Form
@@ -820,10 +748,10 @@ internal sealed class AdminRecoveryForm : Form
 
         Controls.Add(new Label { Text = "Восстановление доступа администратора", Font = new Font("Segoe UI", 15, FontStyle.Bold), ForeColor = Color.FromArgb(39, 27, 49), AutoSize = true, Location = new Point(24, 20) });
         Controls.Add(new Label {
-            Text = "Изменится только пароль существующего активного аккаунта ADMIN с указанным email.\r\nУченики, задания, оценки и базы данных не удаляются.",
+            Text = "Меняется только пароль существующего активного аккаунта ADMIN. Если он один, email можно не указывать.\r\nУченики, задания, оценки и базы данных не удаляются.",
             ForeColor = Color.FromArgb(124, 113, 132), AutoSize = false, Bounds = new Rectangle(26, 58, 520, 42)
         });
-        Controls.Add(new Label { Text = "Email администратора", ForeColor = Color.FromArgb(124, 113, 132), AutoSize = true, Location = new Point(26, 108) });
+        Controls.Add(new Label { Text = "Email администратора (необязательно, если он один)", ForeColor = Color.FromArgb(124, 113, 132), AutoSize = true, Location = new Point(26, 108) });
         email.Bounds = new Rectangle(26, 130, 520, 30);
         email.Font = new Font("Segoe UI", 10);
         Controls.Add(email);
@@ -877,9 +805,11 @@ internal sealed class AdminRecoveryForm : Form
     private void ResetPassword(object sender, EventArgs e)
     {
         if (process != null && !process.HasExited) return;
-        if (String.IsNullOrWhiteSpace(email.Text)) { MessageBox.Show(this, "Введите email администратора.", "Нужен email", MessageBoxButtons.OK, MessageBoxIcon.Information); email.Focus(); return; }
-        try { new System.Net.Mail.MailAddress(email.Text.Trim()); }
-        catch { MessageBox.Show(this, "Введите корректный email администратора.", "Неверный email", MessageBoxButtons.OK, MessageBoxIcon.Information); email.Focus(); return; }
+        if (!String.IsNullOrWhiteSpace(email.Text))
+        {
+            try { new System.Net.Mail.MailAddress(email.Text.Trim()); }
+            catch { MessageBox.Show(this, "Введите корректный email администратора.", "Неверный email", MessageBoxButtons.OK, MessageBoxIcon.Information); email.Focus(); return; }
+        }
         if (password.Text.Length < 12) { MessageBox.Show(this, "Пароль должен содержать не менее 12 символов.", "Слишком короткий пароль", MessageBoxButtons.OK, MessageBoxIcon.Information); password.Focus(); return; }
         if (Encoding.UTF8.GetByteCount(password.Text) > 72) { MessageBox.Show(this, "Пароль слишком длинный в UTF-8. Допустимо не более 72 байт.", "Слишком длинный пароль", MessageBoxButtons.OK, MessageBoxIcon.Information); password.Focus(); return; }
         if (!String.Equals(password.Text, confirmPassword.Text, StringComparison.Ordinal)) { MessageBox.Show(this, "Пароли не совпадают.", "Проверьте пароль", MessageBoxButtons.OK, MessageBoxIcon.Information); confirmPassword.Focus(); return; }
@@ -943,11 +873,17 @@ internal sealed class AdminRecoveryForm : Form
         lock (output) { result = output.ToString(); }
         if (exitCode == 0 && result.Contains("ADMIN_PASSWORD_RESET_OK"))
         {
-            status.Text = "Пароль обновлён. Войдите с указанным email и новым паролем.";
+            string accountEmail = "";
+            foreach (string line in result.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
+                if (line.StartsWith("ADMIN_ACCOUNT_EMAIL:", StringComparison.Ordinal)) accountEmail = line.Substring("ADMIN_ACCOUNT_EMAIL:".Length).Trim();
+            status.Text = String.IsNullOrWhiteSpace(accountEmail) ? "Пароль обновлён." : "Пароль обновлён для " + accountEmail;
             status.ForeColor = Color.FromArgb(35, 130, 85);
             reset.Text = "Готово";
             reset.Enabled = false;
-            MessageBox.Show(this, "Пароль администратора изменён. Данные школы сохранены.", "Готово", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, String.IsNullOrWhiteSpace(accountEmail)
+                ? "Пароль администратора изменён. Данные школы сохранены."
+                : "Пароль администратора изменён. Входите с email " + accountEmail + " и новым паролем. Данные школы сохранены.",
+                "Готово", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         else
         {

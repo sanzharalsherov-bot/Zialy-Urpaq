@@ -49,15 +49,26 @@ test('admin recovery sends credentials over stdin and never writes passwords to 
   assert.doesNotMatch(recovery, /Set-Content[^\n]*\.env|WriteAllText\([^\n]*\.env/u);
 });
 
+test('admin recovery identifies the only active administrator when email is omitted', () => {
+  assert.match(launcher, /если он один/u);
+  assert.match(recovery, /if \(\$email\) \{/u);
+  assert.match(embeddedNodeSource, /findMany\(\{ where: \{ role: "ADMIN", isActive: true \}/u);
+  assert.match(embeddedNodeSource, /users\.length > 1/u);
+  assert.match(embeddedNodeSource, /ADMIN_EMAIL_REQUIRED/u);
+  assert.match(embeddedNodeSource, /ADMIN_ACCOUNT_EMAIL:/u);
+});
+
 test('installer does not claim submitted credentials were applied when accounts already exist', () => {
   assert.match(installer, /ADMIN_CREDENTIALS_NOT_CHANGED/u);
   assert.match(launcher, /adminCredentialsUnchanged/u);
-  assert.match(launcher, /пароль из этой формы не применялся/iu);
+  assert.match(launcher, /пароль из формы обновления не применялся/iu);
 });
 
 test('installer adds the administrator recovery shortcut without recreating user accounts', () => {
   assert.match(launcher, /"--reset-admin"/u);
   assert.match(launcher, /CreateShortcut\(shell, Path\.Combine\(desktop, "Zaily Urpaq - Восстановление пароля администратора\.lnk"\)/u);
+  assert.match(launcher, /recoverAdminButton\.Click \+= RecoverAdmin/u);
+  assert.match(launcher, /new AdminRecoveryForm\(Path\.Combine\(destination/u);
   assert.match(installer, /if \(-not \(Test-Path \$setupComplete\)\)/u);
   assert.match(installer, /if \(\$existingUserCount -gt 0\)/u);
   assert.match(installer, /Сохраняю их без изменений/u);

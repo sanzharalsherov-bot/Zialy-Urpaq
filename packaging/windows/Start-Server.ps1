@@ -40,7 +40,11 @@ if (-not $dockerReady) {
 $previousPreference = $ErrorActionPreference
 try {
   $ErrorActionPreference = 'Continue'
-  $composeOutput = @(docker compose --profile media -p $composeProjectName -f $composeFile up -d 2>&1)
+  $cloudflareConfigured = Select-String -Path (Join-Path $projectDir '.env') -Pattern '^CLOUDFLARE_TUNNEL_TOKEN="?[^"]+"?$' -Quiet
+  $composeArguments = @('compose', '--profile', 'media')
+  if ($cloudflareConfigured) { $composeArguments += @('--profile', 'cloud') }
+  $composeArguments += @('-p', $composeProjectName, '-f', $composeFile, 'up', '-d')
+  $composeOutput = @(docker @composeArguments 2>&1)
   $composeExitCode = $LASTEXITCODE
 } finally {
   $ErrorActionPreference = $previousPreference

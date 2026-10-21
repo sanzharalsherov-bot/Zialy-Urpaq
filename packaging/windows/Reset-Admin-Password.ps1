@@ -12,7 +12,7 @@ try {
 $email = ([string]$config.email).Trim().ToLowerInvariant()
 $password = [string]$config.password
 if ($email.Length -gt 254) { throw 'Email слишком длинный.' }
-try { $null = New-Object -TypeName System.Net.Mail.MailAddress -ArgumentList $email } catch { throw 'Введите корректный email администратора.' }
+if ($email) { try { $null = New-Object -TypeName System.Net.Mail.MailAddress -ArgumentList $email } catch { throw 'Введите корректный email администратора.' } }
 if ($password.Length -lt 12 -or $password.Length -gt 128) { throw 'Пароль должен содержать от 12 до 128 символов.' }
 if ([Text.Encoding]::UTF8.GetByteCount($password) -gt 72) { throw 'Пароль слишком длинный в UTF-8. Допустимо не более 72 байт.' }
 if ($password -match '[\x00-\x08\x0B\x0C\x0E-\x1F]') { throw 'Пароль содержит недопустимые управляющие символы.' }
@@ -71,7 +71,7 @@ if ($parts.Count -ne 3 -or $parts[0] -ne 'true' -or $parts[1] -ne $projectName -
 }
 # The fixed Node payload is stored as base64 so PowerShell never parses JavaScript syntax.
 # The email and password remain JSON input on stdin and are not exposed in process arguments.
-$nodeSourceBase64 = 'Y29uc3QgZnMgPSByZXF1aXJlKCJub2RlOmZzIik7CmNvbnN0IHsgUHJpc21hQ2xpZW50IH0gPSByZXF1aXJlKCJAcHJpc21hL2NsaWVudCIpOwpjb25zdCBiY3J5cHQgPSByZXF1aXJlKCJiY3J5cHRqcyIpOwpjb25zdCBwYXlsb2FkID0gSlNPTi5wYXJzZShmcy5yZWFkRmlsZVN5bmMoMCwgInV0ZjgiKSk7Cihhc3luYyAoKSA9PiB7CiAgY29uc3QgcHJpc21hID0gbmV3IFByaXNtYUNsaWVudCgpOwogIHRyeSB7CiAgICBjb25zdCBlbWFpbCA9IFN0cmluZyhwYXlsb2FkLmVtYWlsIHx8ICIiKS50cmltKCkudG9Mb3dlckNhc2UoKTsKICAgIGNvbnN0IHBhc3N3b3JkID0gU3RyaW5nKHBheWxvYWQucGFzc3dvcmQgfHwgIiIpOwogICAgY29uc3QgdXNlciA9IGF3YWl0IHByaXNtYS51c2VyLmZpbmRVbmlxdWUoeyB3aGVyZTogeyBlbWFpbCB9LCBzZWxlY3Q6IHsgaWQ6IHRydWUsIHJvbGU6IHRydWUsIGlzQWN0aXZlOiB0cnVlIH0gfSk7CiAgICBpZiAoIXVzZXIgfHwgdXNlci5yb2xlICE9PSAiQURNSU4iKSB0aHJvdyBuZXcgRXJyb3IoIkFETUlOX0FDQ09VTlRfTk9UX0ZPVU5EIik7CiAgICBpZiAoIXVzZXIuaXNBY3RpdmUpIHRocm93IG5ldyBFcnJvcigiQURNSU5fQUNDT1VOVF9JTkFDVElWRSIpOwogICAgY29uc3QgcGFzc3dvcmRIYXNoID0gYXdhaXQgYmNyeXB0Lmhhc2gocGFzc3dvcmQsIDEyKTsKICAgIGF3YWl0IHByaXNtYS51c2VyLnVwZGF0ZSh7IHdoZXJlOiB7IGlkOiB1c2VyLmlkIH0sIGRhdGE6IHsgcGFzc3dvcmRIYXNoIH0gfSk7CiAgICBwcm9jZXNzLnN0ZG91dC53cml0ZSgiQURNSU5fUEFTU1dPUkRfUkVTRVRfT0tcbiIpOwogIH0gY2F0Y2ggKGVycm9yKSB7CiAgICBjb25zdCBjb2RlID0gZXJyb3IgJiYgdHlwZW9mIGVycm9yLm1lc3NhZ2UgPT09ICJzdHJpbmciID8gZXJyb3IubWVzc2FnZSA6ICIiOwogICAgaWYgKGNvZGUgPT09ICJBRE1JTl9BQ0NPVU5UX05PVF9GT1VORCIgfHwgY29kZSA9PT0gIkFETUlOX0FDQ09VTlRfSU5BQ1RJVkUiKSBjb25zb2xlLmVycm9yKGNvZGUpOwogICAgZWxzZSBjb25zb2xlLmVycm9yKCJBRE1JTl9QQVNTV09SRF9SRVNFVF9GQUlMRUQiKTsKICAgIHByb2Nlc3MuZXhpdENvZGUgPSAxOwogIH0gZmluYWxseSB7CiAgICBhd2FpdCBwcmlzbWEuJGRpc2Nvbm5lY3QoKTsKICB9Cn0pKCk7'
+$nodeSourceBase64 = 'Y29uc3QgZnMgPSByZXF1aXJlKCJub2RlOmZzIik7CmNvbnN0IHsgUHJpc21hQ2xpZW50IH0gPSByZXF1aXJlKCJAcHJpc21hL2NsaWVudCIpOwpjb25zdCBiY3J5cHQgPSByZXF1aXJlKCJiY3J5cHRqcyIpOwpjb25zdCBwYXlsb2FkID0gSlNPTi5wYXJzZShmcy5yZWFkRmlsZVN5bmMoMCwgInV0ZjgiKSk7Cihhc3luYyAoKSA9PiB7CiAgY29uc3QgcHJpc21hID0gbmV3IFByaXNtYUNsaWVudCgpOwogIHRyeSB7CiAgICBjb25zdCBlbWFpbCA9IFN0cmluZyhwYXlsb2FkLmVtYWlsIHx8ICIiKS50cmltKCkudG9Mb3dlckNhc2UoKTsKICAgIGxldCB1c2VyOwogICAgaWYgKGVtYWlsKSB7CiAgICAgIHVzZXIgPSBhd2FpdCBwcmlzbWEudXNlci5maW5kVW5pcXVlKHsgd2hlcmU6IHsgZW1haWwgfSwgc2VsZWN0OiB7IGlkOiB0cnVlLCBlbWFpbDogdHJ1ZSwgcm9sZTogdHJ1ZSwgaXNBY3RpdmU6IHRydWUgfSB9KTsKICAgICAgaWYgKCF1c2VyIHx8IHVzZXIucm9sZSAhPT0gIkFETUlOIikgdGhyb3cgbmV3IEVycm9yKCJBRE1JTl9BQ0NPVU5UX05PVF9GT1VORCIpOwogICAgICBpZiAoIXVzZXIuaXNBY3RpdmUpIHRocm93IG5ldyBFcnJvcigiQURNSU5fQUNDT1VOVF9JTkFDVElWRSIpOwogICAgfSBlbHNlIHsKICAgICAgY29uc3QgdXNlcnMgPSBhd2FpdCBwcmlzbWEudXNlci5maW5kTWFueSh7IHdoZXJlOiB7IHJvbGU6ICJBRE1JTiIsIGlzQWN0aXZlOiB0cnVlIH0sIHNlbGVjdDogeyBpZDogdHJ1ZSwgZW1haWw6IHRydWUgfSB9KTsKICAgICAgaWYgKCF1c2Vycy5sZW5ndGgpIHRocm93IG5ldyBFcnJvcigiQURNSU5fQUNDT1VOVF9OT1RfRk9VTkQiKTsKICAgICAgaWYgKHVzZXJzLmxlbmd0aCA+IDEpIHRocm93IG5ldyBFcnJvcigiQURNSU5fRU1BSUxfUkVRVUlSRUQiKTsKICAgICAgdXNlciA9IHVzZXJzWzBdOwogICAgfQogICAgY29uc3QgcGFzc3dvcmQgPSBTdHJpbmcocGF5bG9hZC5wYXNzd29yZCB8fCAiIik7CiAgICBjb25zdCBwYXNzd29yZEhhc2ggPSBhd2FpdCBiY3J5cHQuaGFzaChwYXNzd29yZCwgMTIpOwogICAgYXdhaXQgcHJpc21hLnVzZXIudXBkYXRlKHsgd2hlcmU6IHsgaWQ6IHVzZXIuaWQgfSwgZGF0YTogeyBwYXNzd29yZEhhc2ggfSB9KTsKICAgIHByb2Nlc3Muc3Rkb3V0LndyaXRlKGBBRE1JTl9QQVNTV09SRF9SRVNFVF9PS1xuQURNSU5fQUNDT1VOVF9FTUFJTDoke3VzZXIuZW1haWx9XG5gKTsKICB9IGNhdGNoIChlcnJvcikgewogICAgY29uc3QgY29kZSA9IGVycm9yICYmIHR5cGVvZiBlcnJvci5tZXNzYWdlID09PSAic3RyaW5nIiA/IGVycm9yLm1lc3NhZ2UgOiAiIjsKICAgIGlmIChbIkFETUlOX0FDQ09VTlRfTk9UX0ZPVU5EIiwgIkFETUlOX0FDQ09VTlRfSU5BQ1RJVkUiLCAiQURNSU5fRU1BSUxfUkVRVUlSRUQiXS5pbmNsdWRlcyhjb2RlKSkgY29uc29sZS5lcnJvcihjb2RlKTsKICAgIGVsc2UgY29uc29sZS5lcnJvcigiQURNSU5fUEFTU1dPUkRfUkVTRVRfRkFJTEVEIik7CiAgICBwcm9jZXNzLmV4aXRDb2RlID0gMTsKICB9IGZpbmFsbHkgewogICAgYXdhaXQgcHJpc21hLiRkaXNjb25uZWN0KCk7CiAgfQp9KSgpOw=='
 $nodeExpression = "eval(Buffer.from('$nodeSourceBase64','base64').toString('utf8'))"
 
 $processInfo = New-Object Diagnostics.ProcessStartInfo
@@ -102,8 +102,14 @@ if ($processExitCode -ne 0) {
   if ($stderr -match 'ADMIN_ACCOUNT_INACTIVE') {
     throw 'Учётная запись администратора отключена. Пароль не изменён; требуется проверить статус аккаунта.'
   }
+  if ($stderr -match 'ADMIN_EMAIL_REQUIRED') {
+    throw 'В базе несколько администраторов. Укажите email нужной учётной записи.'
+  }
   throw 'Не удалось безопасно обновить пароль. Проверьте, что обе базы и API работают, затем повторите попытку. Существующие данные не удалялись.'
 }
 if ($stdout -notmatch 'ADMIN_PASSWORD_RESET_OK') { throw 'Сервер не подтвердил обновление пароля. Повторите проверку входа; данные не удалялись.' }
+$emailMatch = [regex]::Match($stdout, '(?m)^ADMIN_ACCOUNT_EMAIL:(.+)$')
+$resolvedEmail = if ($emailMatch.Success) { $emailMatch.Groups[1].Value.Trim() } else { $email }
 Write-Output 'ADMIN_PASSWORD_RESET_OK'
-Write-Output "Пароль обновлён для существующей учётной записи администратора: $email"
+Write-Output "ADMIN_ACCOUNT_EMAIL:$resolvedEmail"
+Write-Output "Пароль обновлён для существующей учётной записи администратора: $resolvedEmail"

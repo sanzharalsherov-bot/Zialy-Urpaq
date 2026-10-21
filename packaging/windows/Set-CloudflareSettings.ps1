@@ -35,5 +35,6 @@ function Set-EnvSetting([string]$Name, [string]$Value) {
 }
 
 Set-EnvSetting 'CLOUDFLARE_TUNNEL_TOKEN' $TunnelToken
+Set-EnvSetting 'WEB_ORIGIN' ('https://' + $Hostname)
 Set-EnvSetting 'LIVEKIT_PUBLIC_URL' ('wss://' + $Hostname + '/livekit')
 [IO.File]::WriteAllText($EnvFile, $content, [Text.UTF8Encoding]::new($false))

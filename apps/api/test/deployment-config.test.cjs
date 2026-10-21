@@ -12,12 +12,25 @@ const caddy = readFileSync(resolve(__dirname, '../../../Caddyfile'), 'utf8');
 
 test('Windows daily launcher starts the LiveKit media profile with the school platform', () => {
   assert.match(startServer, /Ensure-MediaConfig\.ps1/u);
-  assert.match(startServer, /docker compose\s+--profile media\s+-p\s+\$composeProjectName/u);
+  assert.match(startServer, /\$composeArguments = @\('compose', '--profile', 'media'\)/u);
+  assert.match(startServer, /if \(\$cloudflareConfigured\) \{ \$composeArguments \+= @\('--profile', 'cloud'\) \}/u);
+  assert.match(startServer, /docker @composeArguments/u);
 });
 
 test('Windows installation starts LiveKit as part of the school platform', () => {
   assert.match(installer, /Ensure-MediaConfig\.ps1/u);
-  assert.match(installer, /@\('compose',\s*'--profile',\s*'media',\s*'-p',\s*\$composeProjectName/u);
+  assert.match(installer, /\$stackArguments = @\('compose', '--profile', 'media'\)/u);
+  assert.match(installer, /if \(\$cloudflareEnabled\) \{ \$stackArguments \+= @\('--profile', 'cloud'\) \}/u);
+  assert.match(installer, /\$stackArguments \+= @\('-p', \$composeProjectName, '-f', \$composePath, 'up', '-d', '--build'\)/u);
+});
+
+test('Cloudflare configuration stays optional and is handled by the main installer', () => {
+  const launcher = readFileSync(resolve(__dirname, '../../../packaging/windows/InstallerApp.cs'), 'utf8');
+  assert.match(launcher, /configureCloudflare = configureCloudflare\.Checked/u);
+  assert.match(installer, /if \(\$cloudflareEnabled\).*?Set-CloudflareSettings\.ps1/su);
+  assert.match(installer, /CLOUDFLARE_HEALTH_PENDING/u);
+  assert.doesNotMatch(installer, /Enable-Cloudflare\.ps1/u);
+  assert.match(startServer, /CLOUDFLARE_TUNNEL_TOKEN/u);
 });
 
 test('Windows installer detects LiveKit port conflicts before starting the stack and preserves existing data', () => {

@@ -8,6 +8,9 @@ $firstName = ([string]$setupConfig.firstName).Trim()
 $lastName = ([string]$setupConfig.lastName).Trim()
 $password = [string]$setupConfig.password
 $studentAccessCode = [string]$setupConfig.studentAccessCode
+$cloudflareEnabled = [bool]$setupConfig.configureCloudflare
+$cloudflareHostname = ([string]$setupConfig.cloudflareHostname).Trim()
+$cloudflareToken = ([string]$setupConfig.cloudflareToken).Trim()
 
 function Write-InstallStatus([string]$Message) {
   $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Message))
@@ -257,6 +260,11 @@ $bootstrapLine = Get-Content $envFile | Where-Object { $_ -match '^BOOTSTRAP_ADM
 $bootstrapKey = ($bootstrapLine -split '=', 2)[1].Trim().Trim('"')
 $userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 & icacls.exe $envFile /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' "*$($userSid):F" *> $null
+if ($cloudflareEnabled) {
+  Write-InstallStatus 'Настраиваю Cloudflare Tunnel в конфигурации сервера…'
+  & (Join-Path $installDir 'packaging\windows\Set-CloudflareSettings.ps1') -EnvFile $envFile -Hostname $cloudflareHostname -TunnelToken $cloudflareToken
+  $cloudflareHostname = $cloudflareHostname.Trim().ToLowerInvariant().TrimEnd('.')
+}
 
 function Assert-LiveKitPortsAvailable {
   # A different Docker Compose project may already publish LiveKit's fixed host
@@ -300,7 +308,10 @@ for ($attempt = 0; $attempt -lt 30; $attempt++) {
 }
 if (-not $databaseReady) { throw "PostgreSQL запустился, но API не удаётся подключить к базе. $databaseError Данные в томе сохранены." }
 
-$stackStart = Invoke-DockerCommand @('compose', '--profile', 'media', '-p', $composeProjectName, '-f', $composePath, 'up', '-d', '--build')
+$stackArguments = @('compose', '--profile', 'media')
+if ($cloudflareEnabled) { $stackArguments += @('--profile', 'cloud') }
+$stackArguments += @('-p', $composeProjectName, '-f', $composePath, 'up', '-d', '--build')
+$stackStart = Invoke-DockerCommand $stackArguments
 if ($stackStart.ExitCode -ne 0) { throw "Сборка или запуск завершились ошибкой. Диагностика: docker compose -p $composeProjectName -f compose.production.yaml logs." }
 
 # The results database has its own persistent volume. Keep its role password
@@ -367,6 +378,28 @@ if (-not (Test-Path $setupComplete)) {
   }
   if (-not $apiReady) { throw 'Администратор создан, но API не восстановился после перезапуска. Проверьте логи Docker Compose.' }
   Set-Content -Path $setupComplete -Value 'completed' -NoNewline
+}
+
+if ($cloudflareEnabled) {
+  Write-InstallStatus 'Проверяю публичный HTTPS-адрес Cloudflare…'
+  $publicAddressReady = $false
+  for ($attempt = 0; $attempt -lt 12; $attempt++) {
+    try {
+      $health = Invoke-RestMethod -Uri "https://${cloudflareHostname}/api/health" -TimeoutSec 5
+      if ($health.status -eq 'ok' -and $health.database -eq 'connected' -and $health.service -eq 'school-crm-api') {
+        $liveKit = Invoke-WebRequest -Uri "https://${cloudflareHostname}/livekit/" -UseBasicParsing -TimeoutSec 5
+        if ($liveKit.StatusCode -eq 200 -and $liveKit.Content.Trim() -eq 'OK') { $publicAddressReady = $true; break }
+      }
+    } catch { }
+    Start-Sleep -Seconds 3
+  }
+  if ($publicAddressReady) {
+    Write-InstallAddress "Публичный адрес: https://${cloudflareHostname}"
+    Write-Host 'PUBLIC_HEALTH_OK'
+  } else {
+    [Console]::Out.WriteLine('CLOUDFLARE_HEALTH_PENDING')
+    Write-Host 'Платформа работает в школьной сети, но публичный адрес Cloudflare пока не прошёл проверку. Проверьте Tunnel Token и Public Hostname в Cloudflare.' -ForegroundColor Yellow
+  }
 }
 
 Write-InstallStatus 'Завершаю настройку сервера…'
@@ -448,14 +481,9 @@ if ([bool]$setupConfig.createDesktopShortcut) {
   $shortcut.IconLocation = "$launcherExe,0"
   $shortcut.Save()
 
-  $cloudflareShortcut = $shell.CreateShortcut((Join-Path $desktop 'Zaily Urpaq - Cloudflare.lnk'))
-  $cloudflareShortcut.TargetPath = $launcherExe
-  $cloudflareShortcut.Arguments = '--cloudflare'
-  $cloudflareShortcut.WorkingDirectory = $installDir
-  $cloudflareShortcut.Description = 'Настроить защищённый доступ через Cloudflare Tunnel'
-  $cloudflareShortcut.IconLocation = "$launcherExe,0"
-  $cloudflareShortcut.Save()
 }
+$cloudflareShortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Zaily Urpaq - Cloudflare.lnk'
+Remove-Item -LiteralPath $cloudflareShortcutPath -Force -ErrorAction SilentlyContinue
 
 $startupDir = [Environment]::GetFolderPath('Startup')
 $dockerDesktopPath = @(
@@ -480,7 +508,7 @@ Write-InstallAddress 'На сервере: http://localhost:8080'
 foreach ($address in $addresses) { Write-InstallAddress "В школьной сети: https://${address}:8443" }
 Write-Host 'Для HTTPS на каждом устройстве школы необходимо доверять корневому сертификату этого сервера (см. packaging\windows\README.md).'
 Write-Host 'Docker Desktop настроен на автоматический запуск при входе пользователя Windows.'
-Write-Host 'Cloudflare Tunnel подключается отдельным скриптом Enable-Cloudflare.ps1 после настройки hostname в Cloudflare.'
+if ($cloudflareEnabled -and $publicAddressReady) { Write-Host "Публичный HTTPS-адрес: https://${cloudflareHostname}" }
 Write-Host 'Резервную копию базы создаёт packaging\windows\Backup.ps1.'
 Start-Process 'http://localhost:8080'
 Write-InstallStatus 'Установка завершена. Платформа открывается в браузере.'
