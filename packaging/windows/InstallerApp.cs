@@ -175,9 +175,9 @@ internal sealed class InstallerForm : Form
     {
         Text = "Установка Zaily Urpaq";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(800, 940);
-        MinimumSize = new Size(800, 940);
-        MaximumSize = new Size(800, 940);
+        ClientSize = new Size(800, 760);
+        MinimumSize = new Size(800, 640);
+        AutoScroll = true;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         BackColor = Color.FromArgb(247, 245, 248);

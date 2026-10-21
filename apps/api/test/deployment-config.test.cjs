@@ -26,6 +26,8 @@ test('Windows installation starts LiveKit as part of the school platform', () =>
 
 test('Cloudflare configuration stays optional and is handled by the main installer', () => {
   const launcher = readFileSync(resolve(__dirname, '../../../packaging/windows/InstallerApp.cs'), 'utf8');
+  assert.match(launcher, /AutoScroll = true/u);
+  assert.match(launcher, /ClientSize = new Size\(800, 760\)/u);
   assert.match(launcher, /configureCloudflare = configureCloudflare\.Checked/u);
   assert.match(installer, /if \(\$cloudflareEnabled\).*?Set-CloudflareSettings\.ps1/su);
   assert.match(installer, /CLOUDFLARE_HEALTH_PENDING/u);
