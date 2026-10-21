@@ -149,8 +149,6 @@ internal sealed class InstallerForm : Form
     private readonly TextBox cloudflareToken = new TextBox();
     private readonly Panel cloudflarePanel = new Panel();
     private readonly CheckBox createDesktopShortcut = new CheckBox();
-    private readonly CheckBox resetSchoolData = new CheckBox();
-    private readonly Label resetSchoolDataNote = new Label();
     private readonly Label installPathPreview = new Label();
     private readonly Panel credentialsPanel = new Panel();
     private readonly Label cloudflareNote = new Label();
@@ -259,30 +257,6 @@ internal sealed class InstallerForm : Form
         recoverAdminButton.Visible = false;
         recoverAdminButton.Click += RecoverAdmin;
         card.Controls.Add(recoverAdminButton);
-
-        resetSchoolData.Text = "Начать заново: очистить всю школьную базу перед установкой";
-        resetSchoolData.AutoSize = true;
-        resetSchoolData.Location = new Point(32, 474);
-        resetSchoolData.ForeColor = Color.FromArgb(174, 55, 68);
-        resetSchoolData.Visible = false;
-        resetSchoolData.CheckedChanged += delegate
-        {
-            resetSchoolDataNote.Visible = resetSchoolData.Checked;
-            credentialsPanel.Enabled = !existingInstall || resetSchoolData.Checked;
-            recoverAdminButton.Visible = existingInstall && !resetSchoolData.Checked;
-            installButton.Text = resetSchoolData.Checked ? "Очистить и установить заново" : existingInstall ? "Обновить и запустить" : "Установить платформу";
-            if (existingInstall)
-                hint.Text = resetSchoolData.Checked
-                    ? "Будет создана новая школа. Все старые аккаунты, задания и результаты будут удалены после подтверждения."
-                    : "Существующая установка: база и аккаунты сохранятся. Для чистого старта включите режим «Начать заново».";
-        };
-        card.Controls.Add(resetSchoolData);
-        resetSchoolDataNote.Text = "Будут удалены аккаунты, классы, задания, ответы, оценки и результаты. Настройки Docker и файлы сервера сохранятся.";
-        resetSchoolDataNote.ForeColor = Color.FromArgb(174, 55, 68);
-        resetSchoolDataNote.AutoSize = false;
-        resetSchoolDataNote.Bounds = new Rectangle(33, 496, 670, 34);
-        resetSchoolDataNote.Visible = false;
-        card.Controls.Add(resetSchoolDataNote);
 
         configureCloudflare.Text = "Настроить публичный доступ Cloudflare сейчас (необязательно)";
         configureCloudflare.AutoSize = true;
@@ -414,36 +388,32 @@ internal sealed class InstallerForm : Form
             existingInstall = false;
             installPathPreview.Text = "";
         }
-        credentialsPanel.Enabled = !existingInstall || resetSchoolData.Checked;
+        credentialsPanel.Enabled = true;
         recoverAdminButton.Visible = existingInstall;
-        resetSchoolData.Checked = false;
-        resetSchoolData.Visible = existingInstall;
-        resetSchoolDataNote.Visible = false;
         ApplyFormLayout();
         if (existingInstall)
         {
-            hint.Text = "Существующая установка: база и аккаунты сохранятся. Если не получается войти, используйте восстановление администратора.";
-            installButton.Text = "Обновить и запустить";
+            hint.Text = "При нажатии «Установить» существующая школьная база будет очищена и создан новый администратор. Для обычного запуска используйте ярлык Zaily Urpaq.";
+            installButton.Text = "Очистить и установить заново";
         }
         else
         {
-            hint.Text = "Папка ZailyUrpaq будет создана автоматически. При первом запуске потребуется интернет.";
+            hint.Text = "Будет создана новая школа и аккаунт администратора. При первом запуске потребуется интернет.";
             installButton.Text = "Установить платформу";
         }
     }
 
     private void ApplyFormLayout()
     {
-        int offset = existingInstall ? 61 : 0;
-        configureCloudflare.Location = new Point(32, 474 + offset);
-        cloudflarePanel.Location = new Point(32, 502 + offset);
-        cloudflareNote.Location = new Point(33, 595 + offset);
-        schoolFlowNote.Location = new Point(32, 630 + offset);
-        status.Location = new Point(32, 663 + offset);
-        hint.Location = new Point(32, 688 + offset);
-        progress.Location = new Point(32, 734 + offset);
-        installButton.Location = new Point(432, 758 + offset);
-        detailsButton.Location = new Point(32, 765 + offset);
+        configureCloudflare.Location = new Point(32, 474);
+        cloudflarePanel.Location = new Point(32, 502);
+        cloudflareNote.Location = new Point(33, 595);
+        schoolFlowNote.Location = new Point(32, 630);
+        status.Location = new Point(32, 663);
+        hint.Location = new Point(32, 688);
+        progress.Location = new Point(32, 734);
+        installButton.Location = new Point(432, 758);
+        detailsButton.Location = new Point(32, 765);
     }
 
     private void StartInstallation(object sender, EventArgs e)
@@ -471,26 +441,23 @@ internal sealed class InstallerForm : Form
             ShowValidation("Для Cloudflare укажите домен и Tunnel Token. Для доступа только в школе снимите галочку.", String.IsNullOrWhiteSpace(hostname) ? cloudflareHostname : cloudflareToken);
             return;
         }
-        if (existingInstall && resetSchoolData.Checked)
+        if (existingInstall)
         {
             DialogResult resetChoice = MessageBox.Show(this,
-                "Это удалит ВСЮ школьную базу: аккаунты, классы, тесты, ответы, оценки и архив результатов. Отменить очистку после начала установки нельзя. Файлы сервера и настройки Docker сохранятся. Продолжить с созданием новой школы?",
+                "Установщик создаст новую школу. Будут удалены ВСЕ существующие аккаунты, классы, тесты, ответы, оценки и архив результатов. Настройки Docker и файлы сервера сохранятся. Отменить очистку после начала установки нельзя. Продолжить?",
                 "Подтвердите полную очистку школы", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
             if (resetChoice != DialogResult.Yes) return;
         }
-        if (!existingInstall || resetSchoolData.Checked)
-        {
-            try { new System.Net.Mail.MailAddress(adminEmail); }
-            catch { ShowValidation("Введите корректный email администратора.", email); return; }
-            if (adminFirstName.Length == 0) { ShowValidation("Укажите имя администратора.", firstName); return; }
-            if (adminLastName.Length == 0) { ShowValidation("Укажите фамилию администратора.", lastName); return; }
-            if (adminPassword.Length < 12) { ShowValidation("Пароль должен содержать не менее 12 символов.", password); return; }
-            if (Encoding.UTF8.GetByteCount(adminPassword) > 72) { ShowValidation("Пароль слишком длинный в UTF-8. Допустимо не более 72 байт.", password); return; }
-            if (adminPassword != confirmPassword.Text) { ShowValidation("Пароли не совпадают.", confirmPassword); return; }
-            if (accessCode.Length < 6 || accessCode.Length > 64) { ShowValidation("Общий код учеников должен содержать от 6 до 64 символов.", studentAccessCode); return; }
-        }
+        try { new System.Net.Mail.MailAddress(adminEmail); }
+        catch { ShowValidation("Введите корректный email администратора.", email); return; }
+        if (adminFirstName.Length == 0) { ShowValidation("Укажите имя администратора.", firstName); return; }
+        if (adminLastName.Length == 0) { ShowValidation("Укажите фамилию администратора.", lastName); return; }
+        if (adminPassword.Length < 12) { ShowValidation("Пароль должен содержать не менее 12 символов.", password); return; }
+        if (Encoding.UTF8.GetByteCount(adminPassword) > 72) { ShowValidation("Пароль слишком длинный в UTF-8. Допустимо не более 72 байт.", password); return; }
+        if (adminPassword != confirmPassword.Text) { ShowValidation("Пароли не совпадают.", confirmPassword); return; }
+        if (accessCode.Length < 6 || accessCode.Length > 64) { ShowValidation("Общий код учеников должен содержать от 6 до 64 символов.", studentAccessCode); return; }
 
-        var config = new SetupConfig { installDir = path, email = adminEmail, firstName = adminFirstName, lastName = adminLastName, password = adminPassword, studentAccessCode = accessCode, createDesktopShortcut = createDesktopShortcut.Checked, configureCloudflare = configureCloudflare.Checked, cloudflareHostname = hostname, cloudflareToken = tunnelToken, resetSchoolData = resetSchoolData.Checked };
+        var config = new SetupConfig { installDir = path, email = adminEmail, firstName = adminFirstName, lastName = adminLastName, password = adminPassword, studentAccessCode = accessCode, createDesktopShortcut = createDesktopShortcut.Checked, configureCloudflare = configureCloudflare.Checked, cloudflareHostname = hostname, cloudflareToken = tunnelToken };
         pendingConfig = config;
         installationPath = path;
         adminEmailUsed = adminEmail;
@@ -527,7 +494,6 @@ internal sealed class InstallerForm : Form
         installButton.Text = "Выполняется установка…";
         folder.Enabled = false;
         credentialsPanel.Enabled = false;
-        resetSchoolData.Enabled = false;
         cloudflarePanel.Enabled = false;
         configureCloudflare.Enabled = false;
         recoverAdminButton.Enabled = false;
@@ -614,8 +580,7 @@ internal sealed class InstallerForm : Form
         progress.Visible = false;
         installButton.Enabled = true;
         folder.Enabled = true;
-        credentialsPanel.Enabled = !existingInstall || resetSchoolData.Checked;
-        resetSchoolData.Enabled = true;
+        credentialsPanel.Enabled = true;
         cloudflarePanel.Enabled = configureCloudflare.Checked;
         configureCloudflare.Enabled = true;
         recoverAdminButton.Enabled = true;
@@ -784,7 +749,6 @@ internal sealed class InstallerForm : Form
         public bool configureCloudflare { get; set; }
         public string cloudflareHostname { get; set; }
         public string cloudflareToken { get; set; }
-        public bool resetSchoolData { get; set; }
     }
 }
 

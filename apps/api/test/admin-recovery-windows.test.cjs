@@ -58,8 +58,8 @@ test('admin recovery identifies the only active administrator when email is omit
   assert.match(embeddedNodeSource, /ADMIN_ACCOUNT_EMAIL:/u);
 });
 
-test('clean setup removes previous accounts before creating the first admin', () => {
-  assert.match(installer, /if \(\$resetSchoolData -or -not \(Test-Path \$setupComplete\)\)/u);
+test('installer always provisions a clean school and creates the first admin', () => {
+  assert.match(installer, /\$resetSchoolData = \$true/u);
   assert.match(installer, /Clear-DatabaseContents -ContainerName \$postgresContainer -DatabaseName 'schoolcrm'/u);
   assert.match(installer, /Clear-DatabaseContents -ContainerName \$resultsContainer -DatabaseName 'schoolresults'/u);
   assert.match(installer, /tablename <> '_prisma_migrations'/u);
@@ -72,17 +72,17 @@ test('clean setup removes previous accounts before creating the first admin', ()
   assert.match(installer, /docker compose stop api/u);
   assert.match(installer, /SELECT count\(\*\) FROM "User"/u);
   assert.match(installer, /bootstrap-admin/u);
-  assert.match(launcher, /resetSchoolData = resetSchoolData\.Checked/u);
   assert.match(launcher, /Подтвердите полную очистку школы/u);
+  assert.doesNotMatch(launcher, /resetSchoolData|Начать заново/u);
   assert.match(installer, /password = \$password; bootstrapKey = \$bootstrapKey/u);
 });
 
-test('installer keeps recovery available for ordinary updates and uses clean setup only when requested', () => {
+test('daily launcher and admin recovery remain separate from destructive installation', () => {
   assert.match(launcher, /"--reset-admin"/u);
   assert.match(launcher, /CreateShortcut\(shell, Path\.Combine\(desktop, "Zaily Urpaq - Восстановление пароля администратора\.lnk"\)/u);
   assert.match(launcher, /recoverAdminButton\.Click \+= RecoverAdmin/u);
   assert.match(launcher, /new AdminRecoveryForm\(Path\.Combine\(destination/u);
-  assert.match(installer, /if \(\$resetSchoolData -or -not \(Test-Path \$setupComplete\)\)/u);
+  assert.match(installer, /\$resetSchoolData = \$true/u);
   assert.match(installer, /Школьные аккаунты, задания, результаты и настройки очищены/u);
 });
 

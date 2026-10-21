@@ -56,10 +56,11 @@ test('Windows setup synchronizes credentials with both persistent PostgreSQL dat
   assert.match(startServer, /docker @composeArguments/u);
 });
 
-test('school reset is explicit on updates and leaves migrations and Docker volumes intact', () => {
+test('installer creates a clean school while preserving schema and Docker volumes', () => {
   const launcher = readFileSync(resolve(__dirname, '../../../packaging/windows/InstallerApp.cs'), 'utf8');
-  assert.match(launcher, /Начать заново: очистить всю школьную базу/u);
-  assert.match(launcher, /Отменить очистку после начала установки нельзя/u);
+  assert.match(launcher, /ВСЕ существующие аккаунты/u);
+  assert.doesNotMatch(launcher, /resetSchoolData|Начать заново/u);
+  assert.match(installer, /\$resetSchoolData = \$true/u);
   assert.match(installer, /if \(\$resetSchoolData -or -not \(Test-Path \$setupComplete\)\)/u);
   assert.match(installer, /stop', 'api'/u);
   assert.match(installer, /TRUNCATE TABLE[\s\S]*?RESTART IDENTITY CASCADE/u);
