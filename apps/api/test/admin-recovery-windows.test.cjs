@@ -58,32 +58,26 @@ test('admin recovery identifies the only active administrator when email is omit
   assert.match(embeddedNodeSource, /ADMIN_ACCOUNT_EMAIL:/u);
 });
 
-test('installer applies a supplied password only through local recovery for an existing admin', () => {
-  assert.match(installer, /Set-ExistingAdminPassword -AdminEmail \$email -AdminPassword \$password/u);
-  assert.match(installer, /process\.StandardInput\.Write\(\[Convert\]::ToBase64String/u);
-  assert.match(installer, /ADMIN_CREDENTIALS_UPDATED/u);
-  assert.match(installer, /ADMIN_CREDENTIALS_NOT_CHANGED/u);
-  assert.match(launcher, /adminCredentialsUpdated/u);
-  assert.match(launcher, /Новый пароль применён к существующей учётной записи администратора/u);
-  assert.match(recovery, /Для введённого email не найдена активная учётная запись администратора/u);
+test('clean setup removes previous accounts before creating the first admin', () => {
+  assert.match(installer, /if \(\$resetSchoolData -or -not \(Test-Path \$setupComplete\)\)/u);
+  assert.match(installer, /Clear-DatabaseContents -ContainerName \$postgresContainer -DatabaseName 'schoolcrm'/u);
+  assert.match(installer, /Clear-DatabaseContents -ContainerName \$resultsContainer -DatabaseName 'schoolresults'/u);
+  assert.match(installer, /tablename <> '_prisma_migrations'/u);
+  assert.match(installer, /TRUNCATE TABLE[\s\S]*?RESTART IDENTITY CASCADE/u);
+  assert.match(installer, /SELECT count\(\*\) FROM "User"/u);
+  assert.match(installer, /bootstrap-admin/u);
+  assert.match(launcher, /resetSchoolData = resetSchoolData\.Checked/u);
+  assert.match(launcher, /Подтвердите полную очистку школы/u);
+  assert.match(installer, /password = \$password; bootstrapKey = \$bootstrapKey/u);
 });
 
-test('installer never creates a duplicate admin when the database already has accounts', () => {
-  assert.match(installer, /ADMIN_CREDENTIALS_NOT_CHANGED/u);
-  assert.match(installer, /if \(\$existingUserCount -gt 0\)/u);
-  const existingAccountsBlock = installer.match(/if \(\$existingUserCount -gt 0\) \{([\s\S]*?)\n  \} else \{/u)?.[1] ?? '';
-  assert.match(existingAccountsBlock, /Set-ExistingAdminPassword/u);
-  assert.doesNotMatch(existingAccountsBlock, /bootstrap-admin/u);
-});
-
-test('installer adds the administrator recovery shortcut without recreating user accounts', () => {
+test('installer keeps recovery available for ordinary updates and uses clean setup only when requested', () => {
   assert.match(launcher, /"--reset-admin"/u);
   assert.match(launcher, /CreateShortcut\(shell, Path\.Combine\(desktop, "Zaily Urpaq - Восстановление пароля администратора\.lnk"\)/u);
   assert.match(launcher, /recoverAdminButton\.Click \+= RecoverAdmin/u);
   assert.match(launcher, /new AdminRecoveryForm\(Path\.Combine\(destination/u);
-  assert.match(installer, /if \(-not \(Test-Path \$setupComplete\)\)/u);
-  assert.match(installer, /if \(\$existingUserCount -gt 0\)/u);
-  assert.match(installer, /Существующие аккаунты и данные школы будут сохранены/u);
+  assert.match(installer, /if \(\$resetSchoolData -or -not \(Test-Path \$setupComplete\)\)/u);
+  assert.match(installer, /Школьные аккаунты, задания, результаты и настройки очищены/u);
 });
 
 

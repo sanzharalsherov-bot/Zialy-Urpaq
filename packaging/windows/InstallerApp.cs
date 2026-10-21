@@ -149,8 +149,12 @@ internal sealed class InstallerForm : Form
     private readonly TextBox cloudflareToken = new TextBox();
     private readonly Panel cloudflarePanel = new Panel();
     private readonly CheckBox createDesktopShortcut = new CheckBox();
+    private readonly CheckBox resetSchoolData = new CheckBox();
+    private readonly Label resetSchoolDataNote = new Label();
     private readonly Label installPathPreview = new Label();
     private readonly Panel credentialsPanel = new Panel();
+    private readonly Label cloudflareNote = new Label();
+    private readonly Label schoolFlowNote = new Label();
     private readonly Label status = new Label();
     private readonly Label hint = new Label();
     private readonly ProgressBar progress = new ProgressBar();
@@ -199,7 +203,7 @@ internal sealed class InstallerForm : Form
         header.Controls.Add(new Label { Text = "Один компьютер станет сервером для учителей и учеников", Font = new Font("Segoe UI", 9.5f), ForeColor = Muted, AutoSize = true, Location = new Point(214, 64) });
         Controls.Add(header);
 
-        var card = new Panel { Bounds = new Rectangle(30, 110, 740, 810), BackColor = Color.White, Padding = new Padding(32) };
+        var card = new Panel { Bounds = new Rectangle(30, 110, 740, 880), BackColor = Color.White, Padding = new Padding(32) };
         card.Paint += delegate(object sender, PaintEventArgs e) { ControlPaint.DrawBorder(e.Graphics, card.ClientRectangle, Border, ButtonBorderStyle.Solid); };
         Controls.Add(card);
 
@@ -256,14 +260,38 @@ internal sealed class InstallerForm : Form
         recoverAdminButton.Click += RecoverAdmin;
         card.Controls.Add(recoverAdminButton);
 
+        resetSchoolData.Text = "Начать заново: очистить всю школьную базу перед установкой";
+        resetSchoolData.AutoSize = true;
+        resetSchoolData.Location = new Point(32, 474);
+        resetSchoolData.ForeColor = Color.FromArgb(174, 55, 68);
+        resetSchoolData.Visible = false;
+        resetSchoolData.CheckedChanged += delegate
+        {
+            resetSchoolDataNote.Visible = resetSchoolData.Checked;
+            credentialsPanel.Enabled = !existingInstall || resetSchoolData.Checked;
+            recoverAdminButton.Visible = existingInstall && !resetSchoolData.Checked;
+            installButton.Text = resetSchoolData.Checked ? "Очистить и установить заново" : existingInstall ? "Обновить и запустить" : "Установить платформу";
+            if (existingInstall)
+                hint.Text = resetSchoolData.Checked
+                    ? "Будет создана новая школа. Все старые аккаунты, задания и результаты будут удалены после подтверждения."
+                    : "Существующая установка: база и аккаунты сохранятся. Для чистого старта включите режим «Начать заново».";
+        };
+        card.Controls.Add(resetSchoolData);
+        resetSchoolDataNote.Text = "Будут удалены аккаунты, классы, задания, ответы, оценки и результаты. Настройки Docker и файлы сервера сохранятся.";
+        resetSchoolDataNote.ForeColor = Color.FromArgb(174, 55, 68);
+        resetSchoolDataNote.AutoSize = false;
+        resetSchoolDataNote.Bounds = new Rectangle(33, 496, 670, 34);
+        resetSchoolDataNote.Visible = false;
+        card.Controls.Add(resetSchoolDataNote);
+
         configureCloudflare.Text = "Настроить публичный доступ Cloudflare сейчас (необязательно)";
         configureCloudflare.AutoSize = true;
-        configureCloudflare.Location = new Point(32, 474);
+        configureCloudflare.Location = new Point(32, 535);
         configureCloudflare.ForeColor = Ink;
         configureCloudflare.CheckedChanged += delegate { cloudflarePanel.Enabled = configureCloudflare.Checked; };
         card.Controls.Add(configureCloudflare);
 
-        cloudflarePanel.Bounds = new Rectangle(32, 502, 670, 92);
+        cloudflarePanel.Bounds = new Rectangle(32, 563, 670, 92);
         cloudflarePanel.Enabled = false;
         card.Controls.Add(cloudflarePanel);
         AddFieldLabel(cloudflarePanel, "Домен Cloudflare (например, school.example.kz)", 0);
@@ -272,31 +300,37 @@ internal sealed class InstallerForm : Form
         AddInput(cloudflarePanel, cloudflareToken, 365, 22, 34, 300);
         cloudflareToken.UseSystemPasswordChar = true;
 
-        var cloudflareNote = new Label { Text = "Для внешнего доступа нужны домен и Tunnel Token из Cloudflare. Без них сайт сразу работает в школьной сети; после установки ничего вводить не нужно.", ForeColor = Muted, AutoSize = false, Bounds = new Rectangle(33, 595, 670, 32) };
+        cloudflareNote.Text = "Для внешнего доступа нужны домен и Tunnel Token из Cloudflare. Без них сайт сразу работает в школьной сети; после установки ничего вводить не нужно.";
+        cloudflareNote.ForeColor = Muted;
+        cloudflareNote.AutoSize = false;
+        cloudflareNote.Bounds = new Rectangle(33, 656, 670, 32);
         card.Controls.Add(cloudflareNote);
 
-        var note = new Label { Text = "Ученики входят в тест по коду комнаты от учителя. Учитель и администратор — по email и паролю.", ForeColor = Muted, AutoSize = false, Bounds = new Rectangle(32, 630, 670, 28) };
-        card.Controls.Add(note);
+        schoolFlowNote.Text = "Ученики входят в тест по коду комнаты от учителя. Учитель и администратор — по email и паролю.";
+        schoolFlowNote.ForeColor = Muted;
+        schoolFlowNote.AutoSize = false;
+        schoolFlowNote.Bounds = new Rectangle(32, 691, 670, 28);
+        card.Controls.Add(schoolFlowNote);
 
         status.Text = "Готов к установке";
         status.Font = new Font("Segoe UI", 10, FontStyle.Bold);
         status.ForeColor = Ink;
         status.AutoSize = false;
-        status.Bounds = new Rectangle(32, 663, 570, 24);
+        status.Bounds = new Rectangle(32, 724, 570, 24);
         card.Controls.Add(status);
         hint.Text = "При первом запуске потребуется интернет. Docker может попросить принять лицензию.";
         hint.ForeColor = Muted;
         hint.AutoSize = false;
-        hint.Bounds = new Rectangle(32, 688, 670, 42);
+        hint.Bounds = new Rectangle(32, 749, 670, 42);
         card.Controls.Add(hint);
-        progress.Bounds = new Rectangle(32, 734, 670, 12);
+        progress.Bounds = new Rectangle(32, 796, 670, 12);
         progress.Style = ProgressBarStyle.Marquee;
         progress.MarqueeAnimationSpeed = 22;
         progress.Visible = false;
         card.Controls.Add(progress);
 
         installButton.Text = "Установить платформу";
-        installButton.Bounds = new Rectangle(432, 758, 270, 44);
+        installButton.Bounds = new Rectangle(432, 820, 270, 44);
         installButton.BackColor = Purple;
         installButton.ForeColor = Color.White;
         installButton.FlatStyle = FlatStyle.Flat;
@@ -307,7 +341,7 @@ internal sealed class InstallerForm : Form
         card.Controls.Add(installButton);
 
         detailsButton.Text = "Показать сведения";
-        detailsButton.Bounds = new Rectangle(32, 765, 170, 30);
+        detailsButton.Bounds = new Rectangle(32, 827, 170, 30);
         detailsButton.FlatStyle = FlatStyle.Flat;
         detailsButton.FlatAppearance.BorderSize = 0;
         detailsButton.ForeColor = Muted;
@@ -380,8 +414,12 @@ internal sealed class InstallerForm : Form
             existingInstall = false;
             installPathPreview.Text = "";
         }
-        credentialsPanel.Enabled = !existingInstall;
+        credentialsPanel.Enabled = !existingInstall || resetSchoolData.Checked;
         recoverAdminButton.Visible = existingInstall;
+        resetSchoolData.Checked = false;
+        resetSchoolData.Visible = existingInstall;
+        resetSchoolDataNote.Visible = false;
+        ApplyFormLayout();
         if (existingInstall)
         {
             hint.Text = "Существующая установка: база и аккаунты сохранятся. Если не получается войти, используйте восстановление администратора.";
@@ -392,6 +430,20 @@ internal sealed class InstallerForm : Form
             hint.Text = "Папка ZailyUrpaq будет создана автоматически. При первом запуске потребуется интернет.";
             installButton.Text = "Установить платформу";
         }
+    }
+
+    private void ApplyFormLayout()
+    {
+        int offset = existingInstall ? 61 : 0;
+        configureCloudflare.Location = new Point(32, 474 + offset);
+        cloudflarePanel.Location = new Point(32, 502 + offset);
+        cloudflareNote.Location = new Point(33, 595 + offset);
+        schoolFlowNote.Location = new Point(32, 630 + offset);
+        status.Location = new Point(32, 663 + offset);
+        hint.Location = new Point(32, 688 + offset);
+        progress.Location = new Point(32, 734 + offset);
+        installButton.Location = new Point(432, 758 + offset);
+        detailsButton.Location = new Point(32, 765 + offset);
     }
 
     private void StartInstallation(object sender, EventArgs e)
@@ -419,7 +471,14 @@ internal sealed class InstallerForm : Form
             ShowValidation("Для Cloudflare укажите домен и Tunnel Token. Для доступа только в школе снимите галочку.", String.IsNullOrWhiteSpace(hostname) ? cloudflareHostname : cloudflareToken);
             return;
         }
-        if (!existingInstall)
+        if (existingInstall && resetSchoolData.Checked)
+        {
+            DialogResult resetChoice = MessageBox.Show(this,
+                "Это удалит ВСЮ школьную базу: аккаунты, классы, тесты, ответы, оценки и архив результатов. Отменить очистку после начала установки нельзя. Файлы сервера и настройки Docker сохранятся. Продолжить с созданием новой школы?",
+                "Подтвердите полную очистку школы", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            if (resetChoice != DialogResult.Yes) return;
+        }
+        if (!existingInstall || resetSchoolData.Checked)
         {
             try { new System.Net.Mail.MailAddress(adminEmail); }
             catch { ShowValidation("Введите корректный email администратора.", email); return; }
@@ -431,7 +490,7 @@ internal sealed class InstallerForm : Form
             if (accessCode.Length < 6 || accessCode.Length > 64) { ShowValidation("Общий код учеников должен содержать от 6 до 64 символов.", studentAccessCode); return; }
         }
 
-        var config = new SetupConfig { installDir = path, email = adminEmail, firstName = adminFirstName, lastName = adminLastName, password = adminPassword, studentAccessCode = accessCode, createDesktopShortcut = createDesktopShortcut.Checked, configureCloudflare = configureCloudflare.Checked, cloudflareHostname = hostname, cloudflareToken = tunnelToken };
+        var config = new SetupConfig { installDir = path, email = adminEmail, firstName = adminFirstName, lastName = adminLastName, password = adminPassword, studentAccessCode = accessCode, createDesktopShortcut = createDesktopShortcut.Checked, configureCloudflare = configureCloudflare.Checked, cloudflareHostname = hostname, cloudflareToken = tunnelToken, resetSchoolData = resetSchoolData.Checked };
         pendingConfig = config;
         installationPath = path;
         adminEmailUsed = adminEmail;
@@ -468,6 +527,7 @@ internal sealed class InstallerForm : Form
         installButton.Text = "Выполняется установка…";
         folder.Enabled = false;
         credentialsPanel.Enabled = false;
+        resetSchoolData.Enabled = false;
         cloudflarePanel.Enabled = false;
         configureCloudflare.Enabled = false;
         recoverAdminButton.Enabled = false;
@@ -554,7 +614,8 @@ internal sealed class InstallerForm : Form
         progress.Visible = false;
         installButton.Enabled = true;
         folder.Enabled = true;
-        credentialsPanel.Enabled = !existingInstall;
+        credentialsPanel.Enabled = !existingInstall || resetSchoolData.Checked;
+        resetSchoolData.Enabled = true;
         cloudflarePanel.Enabled = configureCloudflare.Checked;
         configureCloudflare.Enabled = true;
         recoverAdminButton.Enabled = true;
@@ -576,17 +637,11 @@ internal sealed class InstallerForm : Form
             status.Text = "Платформа готова к работе";
             status.ForeColor = Color.FromArgb(35, 130, 85);
             string addressText = addresses.ToString().Trim();
-            bool adminCredentialsUnchanged = diagnostics.ToString().Contains("ADMIN_CREDENTIALS_NOT_CHANGED");
-            bool adminCredentialsUpdated = diagnostics.ToString().Contains("ADMIN_CREDENTIALS_UPDATED");
             bool certificateTrustPending = diagnostics.ToString().Contains("CERTIFICATE_TRUST_PENDING");
             bool cloudflareHealthPending = diagnostics.ToString().Contains("CLOUDFLARE_HEALTH_PENDING");
             hint.Text = (String.IsNullOrWhiteSpace(addressText) ? "Сайт откроется в браузере." : addressText)
-                + (adminCredentialsUnchanged
-                    ? "\r\nСуществующие аккаунты сохранены. Пароль не менялся. Для его смены укажите email администратора и новый пароль."
-                    : adminCredentialsUpdated
-                        ? "\r\nНовый пароль применён к существующей учётной записи администратора: " + adminEmailUsed
-                    : (String.IsNullOrWhiteSpace(adminEmailUsed) ? "" : "\r\nВход администратора: " + adminEmailUsed)
-                      + (String.IsNullOrWhiteSpace(studentAccessCodeUsed) ? "" : "\r\nОбщий код учеников: " + studentAccessCodeUsed))
+                + (String.IsNullOrWhiteSpace(adminEmailUsed) ? "" : "\r\nВход администратора: " + adminEmailUsed)
+                + (String.IsNullOrWhiteSpace(studentAccessCodeUsed) ? "" : "\r\nОбщий код учеников: " + studentAccessCodeUsed)
                 + (certificateTrustPending ? "\r\nВнимание: HTTPS-сертификат не добавлен автоматически. См. сообщение о сертификате." : "")
                 + (cloudflareHealthPending ? "\r\nСайт в школьной сети работает, но Cloudflare не прошёл проверку. Сведения сохранены в диагностике." : "")
                 + (String.IsNullOrWhiteSpace(launcherWarning) ? "" : "\r\n" + launcherWarning);
@@ -638,6 +693,7 @@ internal sealed class InstallerForm : Form
         string currentExe = Application.ExecutablePath;
         if (!String.Equals(Path.GetFullPath(currentExe), Path.GetFullPath(installedExe), StringComparison.OrdinalIgnoreCase))
             File.Copy(currentExe, installedExe, true);
+        string iconPath = CreateBrandIcon(installationPath);
 
         Type shellType = Type.GetTypeFromProgID("WScript.Shell");
         if (shellType == null) throw new InvalidOperationException("Не удалось создать ярлык Windows.");
@@ -645,20 +701,48 @@ internal sealed class InstallerForm : Form
         if (createDesktopShortcut.Checked)
         {
             string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            CreateShortcut(shell, Path.Combine(desktop, "Zaily Urpaq.lnk"), installedExe, "--launch", installationPath);
-            CreateShortcut(shell, Path.Combine(desktop, "Zaily Urpaq - Восстановление пароля администратора.lnk"), installedExe, "--reset-admin", installationPath);
+            CreateShortcut(shell, Path.Combine(desktop, "Zaily Urpaq.lnk"), installedExe, "--launch", installationPath, iconPath);
+            CreateShortcut(shell, Path.Combine(desktop, "Zaily Urpaq - Восстановление пароля администратора.lnk"), installedExe, "--reset-admin", installationPath, iconPath);
         }
-        CreateShortcut(shell, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), "Zaily Urpaq Server.lnk"), installedExe, "--start-server", installationPath);
+        CreateShortcut(shell, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), "Zaily Urpaq Server.lnk"), installedExe, "--start-server", installationPath, iconPath);
         Marshal.FinalReleaseComObject(shell);
     }
 
-    private static void CreateShortcut(dynamic shell, string linkPath, string target, string arguments, string workingDirectory)
+    private static string CreateBrandIcon(string installationPath)
+    {
+        string iconPath = Path.Combine(installationPath, "ZailyUrpaq.ico");
+        using (var bitmap = new Bitmap(64, 64))
+        using (var graphics = Graphics.FromImage(bitmap))
+        using (var logo = LoadBrandLogo())
+        {
+            graphics.Clear(Color.White);
+            graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+            float scale = Math.Min(58f / logo.Width, 58f / logo.Height);
+            int width = Math.Max(1, (int)(logo.Width * scale));
+            int height = Math.Max(1, (int)(logo.Height * scale));
+            graphics.DrawImage(logo, new Rectangle((64 - width) / 2, (64 - height) / 2, width, height));
+            IntPtr iconHandle = bitmap.GetHicon();
+            try
+            {
+                Icon icon = Icon.FromHandle(iconHandle);
+                using (FileStream output = File.Create(iconPath)) icon.Save(output);
+            }
+            finally { DestroyIcon(iconHandle); }
+        }
+        return iconPath;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyIcon(IntPtr iconHandle);
+
+    private static void CreateShortcut(dynamic shell, string linkPath, string target, string arguments, string workingDirectory, string iconPath)
     {
         dynamic shortcut = shell.CreateShortcut(linkPath);
         shortcut.TargetPath = target;
         shortcut.Arguments = arguments;
         shortcut.WorkingDirectory = workingDirectory;
         shortcut.Description = "Запустить сервер Zaily Urpaq";
+        shortcut.IconLocation = iconPath + ",0";
         shortcut.Save();
         Marshal.FinalReleaseComObject(shortcut);
     }
@@ -700,6 +784,7 @@ internal sealed class InstallerForm : Form
         public bool configureCloudflare { get; set; }
         public string cloudflareHostname { get; set; }
         public string cloudflareToken { get; set; }
+        public bool resetSchoolData { get; set; }
     }
 }
 

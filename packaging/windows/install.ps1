@@ -8,6 +8,7 @@ $firstName = ([string]$setupConfig.firstName).Trim()
 $lastName = ([string]$setupConfig.lastName).Trim()
 $password = [string]$setupConfig.password
 $studentAccessCode = [string]$setupConfig.studentAccessCode
+$resetSchoolData = [bool]$setupConfig.resetSchoolData
 $cloudflareEnabled = [bool]$setupConfig.configureCloudflare
 $cloudflareHostname = ([string]$setupConfig.cloudflareHostname).Trim()
 $cloudflareToken = ([string]$setupConfig.cloudflareToken).Trim()
@@ -62,41 +63,6 @@ function Invoke-DockerCommand([string[]]$Arguments) {
   return [pscustomobject]@{ Output = $output; ExitCode = $exitCode }
 }
 
-function Set-ExistingAdminPassword([string]$AdminEmail, [string]$AdminPassword) {
-  $recoveryScript = Join-Path $installDir 'packaging\windows\Reset-Admin-Password.ps1'
-  if (-not (Test-Path -LiteralPath $recoveryScript)) { throw 'Не найден безопасный инструмент восстановления пароля администратора. Пароль не изменён.' }
-  $powershell = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::System)) 'WindowsPowerShell\v1.0\powershell.exe'
-  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-  $startInfo.FileName = $powershell
-  $startInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $recoveryScript + '"'
-  $startInfo.UseShellExecute = $false
-  $startInfo.CreateNoWindow = $true
-  $startInfo.RedirectStandardInput = $true
-  $startInfo.RedirectStandardOutput = $true
-  $startInfo.RedirectStandardError = $true
-  $process = New-Object System.Diagnostics.Process
-  $process.StartInfo = $startInfo
-  try {
-    if (-not $process.Start()) { throw 'Не удалось запустить безопасное восстановление пароля.' }
-    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-    $stderrTask = $process.StandardError.ReadToEndAsync()
-    $payload = @{ email = $AdminEmail; password = $AdminPassword } | ConvertTo-Json -Compress
-    $process.StandardInput.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload)))
-    $process.StandardInput.Close()
-    $process.WaitForExit()
-    $stdout = $stdoutTask.Result
-    $stderr = $stderrTask.Result
-    if ($process.ExitCode -ne 0 -or $stdout -notmatch 'ADMIN_PASSWORD_RESET_OK') {
-      if ($stderr -match 'Для введённого email не найдена активная учётная запись администратора') {
-        throw 'Введённый email не совпадает с активной учётной записью администратора. Пароль не изменён; проверьте email первого администратора.'
-      }
-      throw 'Не удалось обновить пароль существующего администратора. Пароль не изменён; проверьте email и повторите попытку.'
-    }
-    Write-Host "Пароль обновлён для существующей учётной записи администратора: $AdminEmail" -ForegroundColor Green
-    [Console]::Out.WriteLine('ADMIN_CREDENTIALS_UPDATED')
-  } finally { $process.Dispose() }
-}
-
 function Set-DatabaseRolePassword([string]$ContainerName, [string]$DatabaseName, [string]$DesiredPassword) {
   # The official PostgreSQL image allows local socket access inside the
   # container. Feed SQL over stdin so this generated secret is not added to
@@ -127,6 +93,45 @@ function Set-DatabaseRolePassword([string]$ContainerName, [string]$DatabaseName,
     $detail = if ($stderr) { " Диагностика: $stderr" } else { '' }
     throw "Не удалось синхронизировать пароль базы с защищённой конфигурацией.$detail"
   }
+}
+
+function Clear-DatabaseContents([string]$ContainerName, [string]$DatabaseName) {
+  $sql = @'
+DO $$
+DECLARE public_tables TEXT;
+BEGIN
+  SELECT string_agg(format('%I.%I', schemaname, tablename), ', ')
+  INTO public_tables
+  FROM pg_tables
+  WHERE schemaname = 'public' AND tablename <> '_prisma_migrations';
+  IF public_tables IS NOT NULL THEN
+    EXECUTE 'TRUNCATE TABLE ' || public_tables || ' RESTART IDENTITY CASCADE';
+  END IF;
+END $$;
+'@
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = $dockerCli
+  $startInfo.Arguments = "exec -i -u postgres $ContainerName psql -v ON_ERROR_STOP=1 -U schoolcrm -d $DatabaseName"
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardInput = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $startInfo
+  try {
+    if (-not $process.Start()) { throw "Не удалось запустить очистку школьной базы $DatabaseName." }
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $process.StandardInput.WriteLine($sql)
+    $process.StandardInput.Close()
+    $process.WaitForExit()
+    $stderr = $stderrTask.Result.Trim()
+    if ($process.ExitCode -ne 0) {
+      $detail = if ($stderr) { " Диагностика: $stderr" } else { '' }
+      throw "Не удалось очистить базу $DatabaseName.$detail"
+    }
+  } finally { $process.Dispose() }
 }
 
 try {
@@ -293,6 +298,16 @@ if (-not (Select-String -Path $envFile -Pattern '^BOOTSTRAP_ADMIN_KEY=' -Quiet))
 }
 $bootstrapLine = Get-Content $envFile | Where-Object { $_ -match '^BOOTSTRAP_ADMIN_KEY=' } | Select-Object -First 1
 $bootstrapKey = ($bootstrapLine -split '=', 2)[1].Trim().Trim('"')
+if ($resetSchoolData -or -not $bootstrapKey) {
+  $bootstrapKey = New-RandomSecret 36
+  $envContent = [IO.File]::ReadAllText($envFile)
+  if ($envContent -match '(?m)^BOOTSTRAP_ADMIN_KEY=') {
+    $envContent = [regex]::Replace($envContent, '(?m)^BOOTSTRAP_ADMIN_KEY=.*$', ('BOOTSTRAP_ADMIN_KEY="' + $bootstrapKey + '"'))
+  } else {
+    $envContent += "`r`nBOOTSTRAP_ADMIN_KEY=`"$bootstrapKey`"`r`n"
+  }
+  [IO.File]::WriteAllText($envFile, $envContent, [Text.UTF8Encoding]::new($false))
+}
 $userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 & icacls.exe $envFile /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' "*$($userSid):F" *> $null
 if ($cloudflareEnabled) {
@@ -324,7 +339,7 @@ Write-Host ''
 Write-Host 'Собираю и запускаю приложение. При первом запуске Docker скачает зависимости; это может занять несколько минут.' -ForegroundColor Cyan
 Write-InstallStatus 'Скачиваю компоненты и запускаю платформу. Это может занять несколько минут…'
 $composePath = Join-Path $installDir 'compose.production.yaml'
-$databaseStart = Invoke-DockerCommand @('compose', '-p', $composeProjectName, '-f', $composePath, 'up', '-d', 'postgres')
+$databaseStart = Invoke-DockerCommand @('compose', '-p', $composeProjectName, '-f', $composePath, 'up', '-d', 'postgres', 'results-postgres')
 if ($databaseStart.ExitCode -ne 0) { throw "Не удалось запустить базу PostgreSQL. Диагностика: docker compose -p $composeProjectName -f compose.production.yaml logs postgres." }
 
 Write-InstallStatus 'Проверяю подключение к сохранённой базе…'
@@ -342,12 +357,6 @@ for ($attempt = 0; $attempt -lt 30; $attempt++) {
   }
 }
 if (-not $databaseReady) { throw "PostgreSQL запустился, но API не удаётся подключить к базе. $databaseError Данные в томе сохранены." }
-
-$stackArguments = @('compose', '--profile', 'media')
-if ($cloudflareEnabled) { $stackArguments += @('--profile', 'cloud') }
-$stackArguments += @('-p', $composeProjectName, '-f', $composePath, 'up', '-d', '--build')
-$stackStart = Invoke-DockerCommand $stackArguments
-if ($stackStart.ExitCode -ne 0) { throw "Сборка или запуск завершились ошибкой. Диагностика: docker compose -p $composeProjectName -f compose.production.yaml logs." }
 
 # The results database has its own persistent volume. Keep its role password
 # synchronized as well when an existing installation is updated/reconfigured.
@@ -368,7 +377,22 @@ if (-not $resultsDatabaseReady) {
   throw "База результатов запустилась, но пароль не удалось синхронизировать. $resultsDatabaseError Данные в томе сохранены."
 }
 
-if (-not (Test-Path $setupComplete)) {
+if ($resetSchoolData -or -not (Test-Path $setupComplete)) {
+  Write-InstallStatus 'Подготавливаю пустую школьную базу…'
+  $stopApi = Invoke-DockerCommand @('compose', '-p', $composeProjectName, '-f', $composePath, 'stop', 'api')
+  if ($stopApi.ExitCode -ne 0) { throw 'Не удалось остановить API перед очисткой. Данные не изменены; повторите установку.' }
+  Clear-DatabaseContents -ContainerName $postgresContainer -DatabaseName 'schoolcrm'
+  Clear-DatabaseContents -ContainerName $resultsContainer -DatabaseName 'schoolresults'
+  Write-Host 'Школьные аккаунты, задания, результаты и настройки очищены. Схемы и миграции сохранены.' -ForegroundColor Yellow
+}
+
+$stackArguments = @('compose', '--profile', 'media')
+if ($cloudflareEnabled) { $stackArguments += @('--profile', 'cloud') }
+$stackArguments += @('-p', $composeProjectName, '-f', $composePath, 'up', '-d', '--build')
+$stackStart = Invoke-DockerCommand $stackArguments
+if ($stackStart.ExitCode -ne 0) { throw "Сборка или запуск завершились ошибкой. Диагностика: docker compose -p $composeProjectName -f compose.production.yaml logs." }
+
+if ($resetSchoolData -or -not (Test-Path $setupComplete)) {
   Write-InstallStatus 'Ожидаю готовности платформы…'
   $ready = $false
   for ($attempt = 0; $attempt -lt 60; $attempt++) {
@@ -380,19 +404,13 @@ if (-not (Test-Path $setupComplete)) {
   if (-not $ready) { throw 'Сервер не ответил после запуска. Проверьте логи через docker compose.' }
 
   $userCountProbe = Invoke-DockerProbe -DockerExe $dockerCli -Arguments @('exec', '-u', 'postgres', $postgresContainer, 'psql', '-U', 'schoolcrm', '-d', 'schoolcrm', '-Atc', 'SELECT count(*) FROM "User"')
-  if ($userCountProbe.ExitCode -ne 0) { throw 'Не удалось проверить базу перед завершением установки. Существующие данные не изменены.' }
+  if ($userCountProbe.ExitCode -ne 0) { throw 'Не удалось проверить пустую базу перед созданием администратора. Очистка уже могла выполниться; повторите установку и проверьте подключение к PostgreSQL.' }
   $userCountText = [string]($userCountProbe.Output | Select-Object -First 1)
   $existingUserCount = 0
   if (-not [int]::TryParse($userCountText.Trim(), [ref]$existingUserCount)) { throw 'База вернула некорректный результат проверки аккаунтов.' }
 
   if ($existingUserCount -gt 0) {
-    Write-Host "В базе уже есть аккаунты ($existingUserCount). Существующие аккаунты и данные школы будут сохранены." -ForegroundColor Yellow
-    if (-not [string]::IsNullOrWhiteSpace($password)) {
-      if ($password.Length -lt 12 -or [Text.Encoding]::UTF8.GetByteCount($password) -gt 72) { throw 'Пароль администратора должен содержать не менее 12 символов и не более 72 байт в UTF-8.' }
-      Set-ExistingAdminPassword -AdminEmail $email -AdminPassword $password
-    } else {
-      [Console]::Out.WriteLine('ADMIN_CREDENTIALS_NOT_CHANGED')
-    }
+    throw "После очистки в базе всё ещё есть аккаунты ($existingUserCount). Первоначальный администратор не создан; проверьте подключение к базе."
   } else {
     if ($password.Length -lt 12) { throw 'Пароль должен содержать не менее 12 символов. Повторно запустите установщик; запущенные данные сохранятся.' }
     if (-not $bootstrapKey) { throw 'Первый администратор ещё не создан, а ключ настройки уже отключён. Данные сохранены; обратитесь к администратору платформы.' }

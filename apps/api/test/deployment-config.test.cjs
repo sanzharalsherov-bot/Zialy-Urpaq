@@ -52,6 +52,29 @@ test('Windows setup synchronizes credentials with both persistent PostgreSQL dat
   assert.match(installer, /Set-DatabaseRolePassword -ContainerName \$postgresContainer -DatabaseName 'schoolcrm' -DesiredPassword \$dbPassword/u);
   assert.match(installer, /Set-DatabaseRolePassword -ContainerName \$resultsContainer -DatabaseName 'schoolresults' -DesiredPassword \$dbPassword/u);
   assert.match(installer, /resultsDatabaseReady/u);
+  assert.match(compose, /school_data:\s*\n\s+results_data:/u);
+  assert.match(startServer, /docker @composeArguments/u);
+});
+
+test('school reset is explicit on updates and leaves migrations and Docker volumes intact', () => {
+  const launcher = readFileSync(resolve(__dirname, '../../../packaging/windows/InstallerApp.cs'), 'utf8');
+  assert.match(launcher, /Начать заново: очистить всю школьную базу/u);
+  assert.match(launcher, /Отменить очистку после начала установки нельзя/u);
+  assert.match(installer, /if \(\$resetSchoolData -or -not \(Test-Path \$setupComplete\)\)/u);
+  assert.match(installer, /stop', 'api'/u);
+  assert.match(installer, /TRUNCATE TABLE[\s\S]*?RESTART IDENTITY CASCADE/u);
+  assert.match(installer, /tablename <> '_prisma_migrations'/u);
+  assert.match(installer, /Set-Content -Path \$setupComplete/u);
+  assert.match(compose, /school_data:/u);
+  assert.match(compose, /results_data:/u);
+  assert.match(startServer, /composeArguments/u);
+});
+
+test('desktop and startup shortcuts use the Zaily Urpaq brand icon', () => {
+  const launcher = readFileSync(resolve(__dirname, '../../../packaging/windows/InstallerApp.cs'), 'utf8');
+  assert.match(launcher, /CreateBrandIcon\(installationPath\)/u);
+  assert.match(launcher, /shortcut\.IconLocation = iconPath \+ ",0"/u);
+  assert.match(launcher, /ZailyUrpaq\.ico/u);
 });
 
 test('Windows backup uses PowerShell-safe Docker execution and verifies both dumps', () => {
