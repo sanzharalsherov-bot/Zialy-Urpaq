@@ -322,24 +322,23 @@ if ($cloudflareEnabled) {
   $cloudflareHostname = $cloudflareHostname.Trim().ToLowerInvariant().TrimEnd('.')
 }
 
-function Assert-LiveKitPortsAvailable {
-  # A different Docker Compose project may already publish LiveKit's fixed host
-  # ports. Detect that before building/starting the stack, without stopping or
-  # deleting any existing containers or their persistent data.
-  foreach ($port in @(7881, 7882)) {
+function Assert-PublishedPortsAvailable {
+  # Another Docker Compose project may already publish ports needed by this
+  # installation. Detect conflicts before starting services or changing data.
+  foreach ($port in @(8080, 8443, 7881, 7882)) {
     $containersProbe = Invoke-DockerProbe -DockerExe $dockerCli -Arguments @('ps', '--filter', "publish=$port", '--format', '{{.Names}}')
     if ($containersProbe.ExitCode -ne 0) { throw 'Не удалось проверить занятость портов Docker. Перезапустите Docker Desktop и повторите установку.' }
     foreach ($containerName in @($containersProbe.Output | Where-Object { $_ })) {
       $ownerProbe = Invoke-DockerProbe -DockerExe $dockerCli -Arguments @('inspect', '--format', '{{ index .Config.Labels "com.docker.compose.project" }}', [string]$containerName)
       $ownerProject = [string]($ownerProbe.Output | Select-Object -First 1)
       if ($ownerProbe.ExitCode -eq 0 -and $ownerProject -and $ownerProject -ne $composeProjectName) {
-        throw "Порт LiveKit $port уже занят контейнером '$containerName' из Docker-проекта '$ownerProject'. Установка остановлена до запуска остальных сервисов. Откройте Docker Desktop, найдите старый/дублирующий проект и штатно остановите его, если он больше не нужен. Не удаляйте volumes и не выполняйте docker compose down -v: там могут храниться данные школы."
+        throw "Порт приложения $port уже занят контейнером '$containerName' из Docker-проекта '$ownerProject'. Установка остановлена до изменения школьной базы. Откройте Docker Desktop, найдите старый/дублирующий проект и штатно остановите его, если он больше не нужен. Не удаляйте volumes и не выполняйте docker compose down -v: там могут храниться данные школы."
       }
     }
   }
 }
 
-Assert-LiveKitPortsAvailable
+Assert-PublishedPortsAvailable
 
 Write-Host ''
 Write-Host 'Собираю и запускаю приложение. При первом запуске Docker скачает зависимости; это может занять несколько минут.' -ForegroundColor Cyan

@@ -36,10 +36,12 @@ test('Cloudflare configuration stays optional and is handled by the main install
 });
 
 test('Windows installer detects LiveKit port conflicts before starting the stack and preserves existing data', () => {
-  assert.match(installer, /function Assert-LiveKitPortsAvailable/u);
+  assert.match(installer, /function Assert-PublishedPortsAvailable/u);
+  assert.match(installer, /foreach \(\$port in @\(8080, 8443, 7881, 7882\)\)/u);
   assert.match(installer, /'ps', '--filter', "publish=\$port"/u);
+  assert.match(installer, /Установка остановлена до изменения школьной базы/u);
   assert.match(installer, /ownerProject -ne \$composeProjectName/u);
-  assert.match(installer, /Assert-LiveKitPortsAvailable\s+Write-Host ''\s+Write-Host 'Собираю и запускаю приложение/u);
+  assert.match(installer, /Assert-PublishedPortsAvailable\s+Write-Host ''\s+Write-Host 'Собираю и запускаю приложение/u);
   assert.match(installer, /Не удаляйте volumes и не выполняйте docker compose down -v/u);
 });
 
