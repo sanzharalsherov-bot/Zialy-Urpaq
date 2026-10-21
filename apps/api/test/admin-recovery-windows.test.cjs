@@ -63,7 +63,7 @@ test('clean setup removes previous accounts before creating the first admin', ()
   assert.match(installer, /Clear-DatabaseContents -ContainerName \$postgresContainer -DatabaseName 'schoolcrm'/u);
   assert.match(installer, /Clear-DatabaseContents -ContainerName \$resultsContainer -DatabaseName 'schoolresults'/u);
   assert.match(installer, /tablename <> '_prisma_migrations'/u);
-  assert.match(installer, /TRUNCATE TABLE public\."User" RESTART IDENTITY CASCADE/u);
+  assert.match(installer, /current_database\(\) = 'schoolcrm'[\s\S]*?TRUNCATE TABLE public\."User" RESTART IDENTITY CASCADE/u);
   assert.match(installer, /TRUNCATE TABLE[\s\S]*?RESTART IDENTITY CASCADE/u);
   assert.match(installer, /\$emptyDatabaseProbe = Invoke-DockerProbe/u);
   assert.match(installer, /\$emptyUserCount -ne 0/u);

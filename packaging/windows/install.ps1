@@ -100,10 +100,12 @@ function Clear-DatabaseContents([string]$ContainerName, [string]$DatabaseName) {
 DO $$
 DECLARE public_tables TEXT;
 BEGIN
-  IF to_regclass('public."User"') IS NULL THEN
-    RAISE EXCEPTION 'Required public.User table is missing; refusing to report a clean school database';
+  IF current_database() = 'schoolcrm' THEN
+    IF to_regclass('public."User"') IS NULL THEN
+      RAISE EXCEPTION 'Required public.User table is missing; refusing to report a clean school database';
+    END IF;
+    TRUNCATE TABLE public."User" RESTART IDENTITY CASCADE;
   END IF;
-  TRUNCATE TABLE public."User" RESTART IDENTITY CASCADE;
   SELECT string_agg(format('%I.%I', schemaname, tablename), ', ')
   INTO public_tables
   FROM pg_tables
