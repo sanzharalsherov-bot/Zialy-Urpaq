@@ -22,9 +22,23 @@ test('admin recovery can only update an existing active ADMIN in the selected Co
   assert.match(embeddedNodeSource, /!user\.isActive/u);
   assert.match(embeddedNodeSource, /prisma\.user\.update/u);
   assert.match(recovery, /com\.docker\.compose\.project/u);
-  assert.ok(recovery.includes('$apiContainer = "$projectName-api-1"'));
+  assert.match(recovery, /docker ps --filter "label=com\\.docker\\.compose\\.project=\\$projectName"/u);
+  assert.match(recovery, /label=com\\.docker\\.compose\\.service=api/u);
+  assert.match(recovery, /Select-Object -Unique/u);
+  assert.match(recovery, /\\$apiContainerIds\\.Count -ne 1/u);
+  assert.match(recovery, /\\$parts\\[2\\] -ne 'api'/u);
+  assert.doesNotMatch(recovery, /\\$apiContainer = "\\$projectName-api-1"/u);
   assert.match(recovery, /данные не удалялись/iu);
   assert.doesNotMatch(recovery, /DROP DATABASE|down -v|prisma\.user\.delete/iu);
+});
+
+test('admin recovery fails closed when Docker does not return exactly one running API container', () => {
+  assert.match(recovery, /if \\(\\$apiContainerProbeExitCode -ne 0\\)/u);
+  assert.match(recovery, /\\$apiContainerIds\\.Count -eq 0/u);
+  assert.match(recovery, /\\$apiContainerIds\\.Count -ne 1/u);
+  assert.match(recovery, /label=com\\.docker\\.compose\\.project=\\$projectName/u);
+  assert.match(recovery, /label=com\\.docker\\.compose\\.service=api/u);
+  assert.match(recovery, /-split '\\\\|', 3/u);
 });
 
 test('admin recovery sends credentials over stdin and never writes passwords to logs or .env', () => {
