@@ -8,6 +8,10 @@ $firstName = ([string]$setupConfig.firstName).Trim()
 $lastName = ([string]$setupConfig.lastName).Trim()
 $password = [string]$setupConfig.password
 $studentAccessCode = [string]$setupConfig.studentAccessCode
+$resetSchoolData = $true
+$cloudflareEnabled = [bool]$setupConfig.configureCloudflare
+$cloudflareHostname = ([string]$setupConfig.cloudflareHostname).Trim()
+$cloudflareToken = ([string]$setupConfig.cloudflareToken).Trim()
 
 function Write-InstallStatus([string]$Message) {
   $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Message))
@@ -89,6 +93,51 @@ function Set-DatabaseRolePassword([string]$ContainerName, [string]$DatabaseName,
     $detail = if ($stderr) { " Диагностика: $stderr" } else { '' }
     throw "Не удалось синхронизировать пароль базы с защищённой конфигурацией.$detail"
   }
+}
+
+function Clear-DatabaseContents([string]$ContainerName, [string]$DatabaseName) {
+  $sql = @'
+DO $$
+DECLARE public_tables TEXT;
+BEGIN
+  IF current_database() = 'schoolcrm' THEN
+    IF to_regclass('public."User"') IS NULL THEN
+      RAISE EXCEPTION 'Required public.User table is missing; refusing to report a clean school database';
+    END IF;
+    TRUNCATE TABLE public."User" RESTART IDENTITY CASCADE;
+  END IF;
+  SELECT string_agg(format('%I.%I', schemaname, tablename), ', ')
+  INTO public_tables
+  FROM pg_tables
+  WHERE schemaname = 'public' AND tablename <> '_prisma_migrations';
+  IF public_tables IS NOT NULL THEN
+    EXECUTE 'TRUNCATE TABLE ' || public_tables || ' RESTART IDENTITY CASCADE';
+  END IF;
+END $$;
+'@
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = $dockerCli
+  $startInfo.Arguments = "exec -i -u postgres $ContainerName psql -v ON_ERROR_STOP=1 -U schoolcrm -d $DatabaseName"
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardInput = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $startInfo
+  try {
+    if (-not $process.Start()) { throw "Не удалось запустить очистку школьной базы $DatabaseName." }
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $process.StandardInput.WriteLine($sql)
+    $process.StandardInput.Close()
+    $process.WaitForExit()
+    $stderr = $stderrTask.Result.Trim()
+    if ($process.ExitCode -ne 0) {
+      $detail = if ($stderr) { " Диагностика: $stderr" } else { '' }
+      throw "Не удалось очистить базу $DatabaseName.$detail"
+    }
+  } finally { $process.Dispose() }
 }
 
 try {
@@ -255,33 +304,47 @@ if (-not (Select-String -Path $envFile -Pattern '^BOOTSTRAP_ADMIN_KEY=' -Quiet))
 }
 $bootstrapLine = Get-Content $envFile | Where-Object { $_ -match '^BOOTSTRAP_ADMIN_KEY=' } | Select-Object -First 1
 $bootstrapKey = ($bootstrapLine -split '=', 2)[1].Trim().Trim('"')
+if ($resetSchoolData -or -not $bootstrapKey) {
+  $bootstrapKey = New-RandomSecret 36
+  $envContent = [IO.File]::ReadAllText($envFile)
+  if ($envContent -match '(?m)^BOOTSTRAP_ADMIN_KEY=') {
+    $envContent = [regex]::Replace($envContent, '(?m)^BOOTSTRAP_ADMIN_KEY=.*$', ('BOOTSTRAP_ADMIN_KEY="' + $bootstrapKey + '"'))
+  } else {
+    $envContent += "`r`nBOOTSTRAP_ADMIN_KEY=`"$bootstrapKey`"`r`n"
+  }
+  [IO.File]::WriteAllText($envFile, $envContent, [Text.UTF8Encoding]::new($false))
+}
 $userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 & icacls.exe $envFile /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' "*$($userSid):F" *> $null
+if ($cloudflareEnabled) {
+  Write-InstallStatus 'Настраиваю Cloudflare Tunnel в конфигурации сервера…'
+  & (Join-Path $installDir 'packaging\windows\Set-CloudflareSettings.ps1') -EnvFile $envFile -Hostname $cloudflareHostname -TunnelToken $cloudflareToken
+  $cloudflareHostname = $cloudflareHostname.Trim().ToLowerInvariant().TrimEnd('.')
+}
 
-function Assert-LiveKitPortsAvailable {
-  # A different Docker Compose project may already publish LiveKit's fixed host
-  # ports. Detect that before building/starting the stack, without stopping or
-  # deleting any existing containers or their persistent data.
-  foreach ($port in @(7881, 7882)) {
+function Assert-PublishedPortsAvailable {
+  # Another Docker Compose project may already publish ports needed by this
+  # installation. Detect conflicts before starting services or changing data.
+  foreach ($port in @(8080, 8443, 7881, 7882)) {
     $containersProbe = Invoke-DockerProbe -DockerExe $dockerCli -Arguments @('ps', '--filter', "publish=$port", '--format', '{{.Names}}')
     if ($containersProbe.ExitCode -ne 0) { throw 'Не удалось проверить занятость портов Docker. Перезапустите Docker Desktop и повторите установку.' }
     foreach ($containerName in @($containersProbe.Output | Where-Object { $_ })) {
       $ownerProbe = Invoke-DockerProbe -DockerExe $dockerCli -Arguments @('inspect', '--format', '{{ index .Config.Labels "com.docker.compose.project" }}', [string]$containerName)
       $ownerProject = [string]($ownerProbe.Output | Select-Object -First 1)
       if ($ownerProbe.ExitCode -eq 0 -and $ownerProject -and $ownerProject -ne $composeProjectName) {
-        throw "Порт LiveKit $port уже занят контейнером '$containerName' из Docker-проекта '$ownerProject'. Установка остановлена до запуска остальных сервисов. Откройте Docker Desktop, найдите старый/дублирующий проект и штатно остановите его, если он больше не нужен. Не удаляйте volumes и не выполняйте docker compose down -v: там могут храниться данные школы."
+        throw "Порт приложения $port уже занят контейнером '$containerName' из Docker-проекта '$ownerProject'. Установка остановлена до изменения школьной базы. Откройте Docker Desktop, найдите старый/дублирующий проект и штатно остановите его, если он больше не нужен. Не удаляйте volumes и не выполняйте docker compose down -v: там могут храниться данные школы."
       }
     }
   }
 }
 
-Assert-LiveKitPortsAvailable
+Assert-PublishedPortsAvailable
 
 Write-Host ''
 Write-Host 'Собираю и запускаю приложение. При первом запуске Docker скачает зависимости; это может занять несколько минут.' -ForegroundColor Cyan
 Write-InstallStatus 'Скачиваю компоненты и запускаю платформу. Это может занять несколько минут…'
 $composePath = Join-Path $installDir 'compose.production.yaml'
-$databaseStart = Invoke-DockerCommand @('compose', '-p', $composeProjectName, '-f', $composePath, 'up', '-d', 'postgres')
+$databaseStart = Invoke-DockerCommand @('compose', '-p', $composeProjectName, '-f', $composePath, 'up', '-d', 'postgres', 'results-postgres')
 if ($databaseStart.ExitCode -ne 0) { throw "Не удалось запустить базу PostgreSQL. Диагностика: docker compose -p $composeProjectName -f compose.production.yaml logs postgres." }
 
 Write-InstallStatus 'Проверяю подключение к сохранённой базе…'
@@ -299,9 +362,6 @@ for ($attempt = 0; $attempt -lt 30; $attempt++) {
   }
 }
 if (-not $databaseReady) { throw "PostgreSQL запустился, но API не удаётся подключить к базе. $databaseError Данные в томе сохранены." }
-
-$stackStart = Invoke-DockerCommand @('compose', '--profile', 'media', '-p', $composeProjectName, '-f', $composePath, 'up', '-d', '--build')
-if ($stackStart.ExitCode -ne 0) { throw "Сборка или запуск завершились ошибкой. Диагностика: docker compose -p $composeProjectName -f compose.production.yaml logs." }
 
 # The results database has its own persistent volume. Keep its role password
 # synchronized as well when an existing installation is updated/reconfigured.
@@ -322,7 +382,29 @@ if (-not $resultsDatabaseReady) {
   throw "База результатов запустилась, но пароль не удалось синхронизировать. $resultsDatabaseError Данные в томе сохранены."
 }
 
-if (-not (Test-Path $setupComplete)) {
+if ($resetSchoolData -or -not (Test-Path $setupComplete)) {
+  Write-InstallStatus 'Подготавливаю пустую школьную базу…'
+  $stopApi = Invoke-DockerCommand @('compose', '-p', $composeProjectName, '-f', $composePath, 'stop', 'api')
+  if ($stopApi.ExitCode -ne 0) { throw 'Не удалось остановить API перед очисткой. Данные не изменены; повторите установку.' }
+  Clear-DatabaseContents -ContainerName $postgresContainer -DatabaseName 'schoolcrm'
+  Clear-DatabaseContents -ContainerName $resultsContainer -DatabaseName 'schoolresults'
+  $emptyDatabaseProbe = Invoke-DockerProbe -DockerExe $dockerCli -Arguments @('exec', '-u', 'postgres', $postgresContainer, 'psql', '-U', 'schoolcrm', '-d', 'schoolcrm', '-Atc', 'SELECT count(*) FROM "User"')
+  if ($emptyDatabaseProbe.ExitCode -ne 0) { throw 'Не удалось проверить очистку школьной базы. API не запускался; повторите установку и проверьте подключение к PostgreSQL.' }
+  $emptyUserCount = 0
+  $emptyUserCountText = [string]($emptyDatabaseProbe.Output | Select-Object -First 1)
+  if (-not [int]::TryParse($emptyUserCountText.Trim(), [ref]$emptyUserCount) -or $emptyUserCount -ne 0) {
+    throw "Очистка не подтвердилась: в PostgreSQL до запуска API осталось аккаунтов ($emptyUserCountText). API остановлен, администратор не создавался."
+  }
+  Write-Host 'Школьные аккаунты, задания, результаты и настройки очищены. Схемы и миграции сохранены.' -ForegroundColor Yellow
+}
+
+$stackArguments = @('compose', '--profile', 'media')
+if ($cloudflareEnabled) { $stackArguments += @('--profile', 'cloud') }
+$stackArguments += @('-p', $composeProjectName, '-f', $composePath, 'up', '-d', '--build')
+$stackStart = Invoke-DockerCommand $stackArguments
+if ($stackStart.ExitCode -ne 0) { throw "Сборка или запуск завершились ошибкой. Диагностика: docker compose -p $composeProjectName -f compose.production.yaml logs." }
+
+if ($resetSchoolData -or -not (Test-Path $setupComplete)) {
   Write-InstallStatus 'Ожидаю готовности платформы…'
   $ready = $false
   for ($attempt = 0; $attempt -lt 60; $attempt++) {
@@ -334,14 +416,15 @@ if (-not (Test-Path $setupComplete)) {
   if (-not $ready) { throw 'Сервер не ответил после запуска. Проверьте логи через docker compose.' }
 
   $userCountProbe = Invoke-DockerProbe -DockerExe $dockerCli -Arguments @('exec', '-u', 'postgres', $postgresContainer, 'psql', '-U', 'schoolcrm', '-d', 'schoolcrm', '-Atc', 'SELECT count(*) FROM "User"')
-  if ($userCountProbe.ExitCode -ne 0) { throw 'Не удалось проверить базу перед завершением установки. Существующие данные не изменены.' }
+  if ($userCountProbe.ExitCode -ne 0) { throw 'Не удалось проверить пустую базу перед созданием администратора. Очистка уже могла выполниться; повторите установку и проверьте подключение к PostgreSQL.' }
   $userCountText = [string]($userCountProbe.Output | Select-Object -First 1)
   $existingUserCount = 0
   if (-not [int]::TryParse($userCountText.Trim(), [ref]$existingUserCount)) { throw 'База вернула некорректный результат проверки аккаунтов.' }
 
   if ($existingUserCount -gt 0) {
-    Write-Host "В базе уже есть аккаунты ($existingUserCount). Сохраняю их без изменений; пароль из этой формы не применялся." -ForegroundColor Yellow
-    [Console]::Out.WriteLine('ADMIN_CREDENTIALS_NOT_CHANGED')
+    $stopApi = Invoke-DockerCommand @('compose', '-p', $composeProjectName, '-f', $composePath, 'stop', 'api')
+    $stopDetail = if ($stopApi.ExitCode -eq 0) { ' API остановлен.' } else { ' Не удалось остановить API автоматически; остановите его командой docker compose stop api.' }
+    throw "После запуска API в базе появились аккаунты ($existingUserCount), хотя очистка до запуска подтвердила ноль. Первоначальный администратор установщиком ещё не создавался.$stopDetail Проверьте, не запущен ли другой процесс, использующий эту же базу."
   } else {
     if ($password.Length -lt 12) { throw 'Пароль должен содержать не менее 12 символов. Повторно запустите установщик; запущенные данные сохранятся.' }
     if (-not $bootstrapKey) { throw 'Первый администратор ещё не создан, а ключ настройки уже отключён. Данные сохранены; обратитесь к администратору платформы.' }
@@ -367,6 +450,28 @@ if (-not (Test-Path $setupComplete)) {
   }
   if (-not $apiReady) { throw 'Администратор создан, но API не восстановился после перезапуска. Проверьте логи Docker Compose.' }
   Set-Content -Path $setupComplete -Value 'completed' -NoNewline
+}
+
+if ($cloudflareEnabled) {
+  Write-InstallStatus 'Проверяю публичный HTTPS-адрес Cloudflare…'
+  $publicAddressReady = $false
+  for ($attempt = 0; $attempt -lt 12; $attempt++) {
+    try {
+      $health = Invoke-RestMethod -Uri "https://${cloudflareHostname}/api/health" -TimeoutSec 5
+      if ($health.status -eq 'ok' -and $health.database -eq 'connected' -and $health.service -eq 'school-crm-api') {
+        $liveKit = Invoke-WebRequest -Uri "https://${cloudflareHostname}/livekit/" -UseBasicParsing -TimeoutSec 5
+        if ($liveKit.StatusCode -eq 200 -and $liveKit.Content.Trim() -eq 'OK') { $publicAddressReady = $true; break }
+      }
+    } catch { }
+    Start-Sleep -Seconds 3
+  }
+  if ($publicAddressReady) {
+    Write-InstallAddress "Публичный адрес: https://${cloudflareHostname}"
+    Write-Host 'PUBLIC_HEALTH_OK'
+  } else {
+    [Console]::Out.WriteLine('CLOUDFLARE_HEALTH_PENDING')
+    Write-Host 'Платформа работает в школьной сети, но публичный адрес Cloudflare пока не прошёл проверку. Проверьте Tunnel Token и Public Hostname в Cloudflare.' -ForegroundColor Yellow
+  }
 }
 
 Write-InstallStatus 'Завершаю настройку сервера…'
@@ -448,14 +553,9 @@ if ([bool]$setupConfig.createDesktopShortcut) {
   $shortcut.IconLocation = "$launcherExe,0"
   $shortcut.Save()
 
-  $cloudflareShortcut = $shell.CreateShortcut((Join-Path $desktop 'Zaily Urpaq - Cloudflare.lnk'))
-  $cloudflareShortcut.TargetPath = $launcherExe
-  $cloudflareShortcut.Arguments = '--cloudflare'
-  $cloudflareShortcut.WorkingDirectory = $installDir
-  $cloudflareShortcut.Description = 'Настроить защищённый доступ через Cloudflare Tunnel'
-  $cloudflareShortcut.IconLocation = "$launcherExe,0"
-  $cloudflareShortcut.Save()
 }
+$cloudflareShortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Zaily Urpaq - Cloudflare.lnk'
+Remove-Item -LiteralPath $cloudflareShortcutPath -Force -ErrorAction SilentlyContinue
 
 $startupDir = [Environment]::GetFolderPath('Startup')
 $dockerDesktopPath = @(
@@ -480,7 +580,7 @@ Write-InstallAddress 'На сервере: http://localhost:8080'
 foreach ($address in $addresses) { Write-InstallAddress "В школьной сети: https://${address}:8443" }
 Write-Host 'Для HTTPS на каждом устройстве школы необходимо доверять корневому сертификату этого сервера (см. packaging\windows\README.md).'
 Write-Host 'Docker Desktop настроен на автоматический запуск при входе пользователя Windows.'
-Write-Host 'Cloudflare Tunnel подключается отдельным скриптом Enable-Cloudflare.ps1 после настройки hostname в Cloudflare.'
+if ($cloudflareEnabled -and $publicAddressReady) { Write-Host "Публичный HTTPS-адрес: https://${cloudflareHostname}" }
 Write-Host 'Резервную копию базы создаёт packaging\windows\Backup.ps1.'
 Start-Process 'http://localhost:8080'
 Write-InstallStatus 'Установка завершена. Платформа открывается в браузере.'

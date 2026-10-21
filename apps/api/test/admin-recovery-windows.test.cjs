@@ -22,9 +22,23 @@ test('admin recovery can only update an existing active ADMIN in the selected Co
   assert.match(embeddedNodeSource, /!user\.isActive/u);
   assert.match(embeddedNodeSource, /prisma\.user\.update/u);
   assert.match(recovery, /com\.docker\.compose\.project/u);
-  assert.ok(recovery.includes('$apiContainer = "$projectName-api-1"'));
+  assert.ok(recovery.includes('label=com.docker.compose.project=$projectName'));
+  assert.ok(recovery.includes("label=com.docker.compose.service=api"));
+  assert.match(recovery, /Select-Object -Unique/u);
+  assert.ok(recovery.includes('$apiContainerIds.Count -ne 1'));
+  assert.ok(recovery.includes("$parts[2] -ne 'api'"));
+  assert.doesNotMatch(recovery, /\$apiContainer = "\$projectName-api-1"/u);
   assert.match(recovery, /данные не удалялись/iu);
   assert.doesNotMatch(recovery, /DROP DATABASE|down -v|prisma\.user\.delete/iu);
+});
+
+test('admin recovery fails closed when Docker does not return exactly one running API container', () => {
+  assert.ok(recovery.includes('$apiContainerProbeExitCode -ne 0'));
+  assert.ok(recovery.includes('$apiContainerIds.Count -eq 0'));
+  assert.ok(recovery.includes('$apiContainerIds.Count -ne 1'));
+  assert.ok(recovery.includes('label=com.docker.compose.project=$projectName'));
+  assert.ok(recovery.includes("label=com.docker.compose.service=api"));
+  assert.ok(recovery.includes("-split '\\|', 3"));
 });
 
 test('admin recovery sends credentials over stdin and never writes passwords to logs or .env', () => {
@@ -35,18 +49,41 @@ test('admin recovery sends credentials over stdin and never writes passwords to 
   assert.doesNotMatch(recovery, /Set-Content[^\n]*\.env|WriteAllText\([^\n]*\.env/u);
 });
 
-test('installer does not claim submitted credentials were applied when accounts already exist', () => {
-  assert.match(installer, /ADMIN_CREDENTIALS_NOT_CHANGED/u);
-  assert.match(launcher, /adminCredentialsUnchanged/u);
-  assert.match(launcher, /пароль из этой формы не применялся/iu);
+test('admin recovery identifies the only active administrator when email is omitted', () => {
+  assert.match(launcher, /если он один/u);
+  assert.match(recovery, /if \(\$email\) \{/u);
+  assert.match(embeddedNodeSource, /findMany\(\{ where: \{ role: "ADMIN", isActive: true \}/u);
+  assert.match(embeddedNodeSource, /users\.length > 1/u);
+  assert.match(embeddedNodeSource, /ADMIN_EMAIL_REQUIRED/u);
+  assert.match(embeddedNodeSource, /ADMIN_ACCOUNT_EMAIL:/u);
 });
 
-test('installer adds the administrator recovery shortcut without recreating user accounts', () => {
+test('installer always provisions a clean school and creates the first admin', () => {
+  assert.match(installer, /\$resetSchoolData = \$true/u);
+  assert.match(installer, /Clear-DatabaseContents -ContainerName \$postgresContainer -DatabaseName 'schoolcrm'/u);
+  assert.match(installer, /Clear-DatabaseContents -ContainerName \$resultsContainer -DatabaseName 'schoolresults'/u);
+  assert.match(installer, /tablename <> '_prisma_migrations'/u);
+  assert.match(installer, /current_database\(\) = 'schoolcrm'[\s\S]*?TRUNCATE TABLE public\."User" RESTART IDENTITY CASCADE/u);
+  assert.match(installer, /TRUNCATE TABLE[\s\S]*?RESTART IDENTITY CASCADE/u);
+  assert.match(installer, /\$emptyDatabaseProbe = Invoke-DockerProbe/u);
+  assert.match(installer, /\$emptyUserCount -ne 0/u);
+  assert.match(installer, /до запуска API осталось аккаунтов/u);
+  assert.match(installer, /после запуска API в базе появились аккаунты/iu);
+  assert.match(installer, /docker compose stop api/u);
+  assert.match(installer, /SELECT count\(\*\) FROM "User"/u);
+  assert.match(installer, /bootstrap-admin/u);
+  assert.match(launcher, /Подтвердите полную очистку школы/u);
+  assert.doesNotMatch(launcher, /resetSchoolData|Начать заново/u);
+  assert.match(installer, /password = \$password; bootstrapKey = \$bootstrapKey/u);
+});
+
+test('daily launcher and admin recovery remain separate from destructive installation', () => {
   assert.match(launcher, /"--reset-admin"/u);
   assert.match(launcher, /CreateShortcut\(shell, Path\.Combine\(desktop, "Zaily Urpaq - Восстановление пароля администратора\.lnk"\)/u);
-  assert.match(installer, /if \(-not \(Test-Path \$setupComplete\)\)/u);
-  assert.match(installer, /if \(\$existingUserCount -gt 0\)/u);
-  assert.match(installer, /Сохраняю их без изменений/u);
+  assert.match(launcher, /recoverAdminButton\.Click \+= RecoverAdmin/u);
+  assert.match(launcher, /new AdminRecoveryForm\(Path\.Combine\(destination/u);
+  assert.match(installer, /\$resetSchoolData = \$true/u);
+  assert.match(installer, /Школьные аккаунты, задания, результаты и настройки очищены/u);
 });
 
 
