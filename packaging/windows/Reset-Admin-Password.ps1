@@ -49,46 +49,6 @@ if ($apiContainerProbeExitCode -ne 0) {
   throw 'Не удалось проверить API-контейнеры Docker. Запустите Docker Desktop и повторите попытку. Пароль не изменён.'
 }
 $apiContainerIds = @($apiContainerProbe | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -match '^[a-f0-9]{12,64}$' } | Select-Object -Unique)
-
-# The fixed Node payload is stored as base64 so PowerShell never parses JavaScript syntax.
-# The email and password remain JSON input on stdin and are not exposed in process arguments.
-$nodeSourceBase64 = 'Y29uc3QgZnMgPSByZXF1aXJlKCJub2RlOmZzIik7CmNvbnN0IHsgUHJpc21hQ2xpZW50IH0gPSByZXF1aXJlKCJAcHJpc21hL2NsaWVudCIpOwpjb25zdCBiY3J5cHQgPSByZXF1aXJlKCJiY3J5cHRqcyIpOwpjb25zdCBwYXlsb2FkID0gSlNPTi5wYXJzZShmcy5yZWFkRmlsZVN5bmMoMCwgInV0ZjgiKSk7Cihhc3luYyAoKSA9PiB7CiAgY29uc3QgcHJpc21hID0gbmV3IFByaXNtYUNsaWVudCgpOwogIHRyeSB7CiAgICBjb25zdCBlbWFpbCA9IFN0cmluZyhwYXlsb2FkLmVtYWlsIHx8ICIiKS50cmltKCkudG9Mb3dlckNhc2UoKTsKICAgIGNvbnN0IHBhc3N3b3JkID0gU3RyaW5nKHBheWxvYWQucGFzc3dvcmQgfHwgIiIpOwogICAgY29uc3QgdXNlciA9IGF3YWl0IHByaXNtYS51c2VyLmZpbmRVbmlxdWUoeyB3aGVyZTogeyBlbWFpbCB9LCBzZWxlY3Q6IHsgaWQ6IHRydWUsIHJvbGU6IHRydWUsIGlzQWN0aXZlOiB0cnVlIH0gfSk7CiAgICBpZiAoIXVzZXIgfHwgdXNlci5yb2xlICE9PSAiQURNSU4iKSB0aHJvdyBuZXcgRXJyb3IoIkFETUlOX0FDQ09VTlRfTk9UX0ZPVU5EIik7CiAgICBpZiAoIXVzZXIuaXNBY3RpdmUpIHRocm93IG5ldyBFcnJvcigiQURNSU5fQUNDT1VOVF9JTkFDVElWRSIpOwogICAgY29uc3QgcGFzc3dvcmRIYXNoID0gYXdhaXQgYmNyeXB0Lmhhc2gocGFzc3dvcmQsIDEyKTsKICAgIGF3YWl0IHByaXNtYS51c2VyLnVwZGF0ZSh7IHdoZXJlOiB7IGlkOiB1c2VyLmlkIH0sIGRhdGE6IHsgcGFzc3dvcmRIYXNoIH0gfSk7CiAgICBwcm9jZXNzLnN0ZG91dC53cml0ZSgiQURNSU5fUEFTU1dPUkRfUkVTRVRfT0tcbiIpOwogIH0gY2F0Y2ggKGVycm9yKSB7CiAgICBjb25zdCBjb2RlID0gZXJyb3IgJiYgdHlwZW9mIGVycm9yLm1lc3NhZ2UgPT09ICJzdHJpbmciID8gZXJyb3IubWVzc2FnZSA6ICIiOwogICAgaWYgKGNvZGUgPT09ICJBRE1JTl9BQ0NPVU5UX05PVF9GT1VORCIgfHwgY29kZSA9PT0gIkFETUlOX0FDQ09VTlRfSU5BQ1RJVkUiKSBjb25zb2xlLmVycm9yKGNvZGUpOwogICAgZWxzZSBjb25zb2xlLmVycm9yKCJBRE1JTl9QQVNTV09SRF9SRVNFVF9GQUlMRUQiKTsKICAgIHByb2Nlc3MuZXhpdENvZGUgPSAxOwogIH0gZmluYWxseSB7CiAgICBhd2FpdCBwcmlzbWEuJGRpc2Nvbm5lY3QoKTsKICB9Cn0pKCk7'
-$nodeExpression = "eval(Buffer.from('$nodeSourceBase64','base64').toString('utf8'))"
-
-$processInfo = New-Object Diagnostics.ProcessStartInfo
-$processInfo.FileName = $dockerExe
-$processInfo.Arguments = "exec -i -w /app $apiContainer node -e `"$nodeExpression`""
-$processInfo.UseShellExecute = $false
-$processInfo.CreateNoWindow = $true
-$processInfo.RedirectStandardInput = $true
-$processInfo.RedirectStandardOutput = $true
-$processInfo.RedirectStandardError = $true
-$process = New-Object Diagnostics.Process
-$process.StartInfo = $processInfo
-try {
-  if (-not $process.Start()) { throw 'Не удалось запустить локальную операцию восстановления.' }
-  $payload = @{ email = $email; password = $password } | ConvertTo-Json -Compress
-  $process.StandardInput.Write($payload)
-  $process.StandardInput.Close()
-  $stdout = $process.StandardOutput.ReadToEnd()
-  $stderr = $process.StandardError.ReadToEnd()
-  $process.WaitForExit()
-  $processExitCode = $process.ExitCode
-} finally { $process.Dispose() }
-
-if ($processExitCode -ne 0) {
-  if ($stderr -match 'ADMIN_ACCOUNT_NOT_FOUND') {
-    throw 'Для введённого email не найдена активная учётная запись администратора. Пароль не изменён. Проверьте email, который использовался при первой установке.'
-  }
-  if ($stderr -match 'ADMIN_ACCOUNT_INACTIVE') {
-    throw 'Учётная запись администратора отключена. Пароль не изменён; требуется проверить статус аккаунта.'
-  }
-  throw 'Не удалось безопасно обновить пароль. Проверьте, что обе базы и API работают, затем повторите попытку. Существующие данные не удалялись.'
-}
-if ($stdout -notmatch 'ADMIN_PASSWORD_RESET_OK') { throw 'Сервер не подтвердил обновление пароля. Повторите проверку входа; данные не удалялись.' }
-Write-Output 'ADMIN_PASSWORD_RESET_OK'
-Write-Output "Пароль обновлён для существующей учётной записи администратора: $email"
- } | Select-Object -Unique)
 if ($apiContainerIds.Count -eq 0) {
   throw 'Запущенный API-контейнер этой установки не найден. Сначала запустите Zaily Urpaq ярлыком и дождитесь готовности сервера.'
 }
@@ -109,7 +69,6 @@ $parts = ([string]$inspectOutput[0]).Trim() -split '\|', 3
 if ($parts.Count -ne 3 -or $parts[0] -ne 'true' -or $parts[1] -ne $projectName -or $parts[2] -ne 'api') {
   throw 'API-контейнер не принадлежит текущему Docker-проекту или не запущен. Ничего не изменено.'
 }
-
 # The fixed Node payload is stored as base64 so PowerShell never parses JavaScript syntax.
 # The email and password remain JSON input on stdin and are not exposed in process arguments.
 $nodeSourceBase64 = 'Y29uc3QgZnMgPSByZXF1aXJlKCJub2RlOmZzIik7CmNvbnN0IHsgUHJpc21hQ2xpZW50IH0gPSByZXF1aXJlKCJAcHJpc21hL2NsaWVudCIpOwpjb25zdCBiY3J5cHQgPSByZXF1aXJlKCJiY3J5cHRqcyIpOwpjb25zdCBwYXlsb2FkID0gSlNPTi5wYXJzZShmcy5yZWFkRmlsZVN5bmMoMCwgInV0ZjgiKSk7Cihhc3luYyAoKSA9PiB7CiAgY29uc3QgcHJpc21hID0gbmV3IFByaXNtYUNsaWVudCgpOwogIHRyeSB7CiAgICBjb25zdCBlbWFpbCA9IFN0cmluZyhwYXlsb2FkLmVtYWlsIHx8ICIiKS50cmltKCkudG9Mb3dlckNhc2UoKTsKICAgIGNvbnN0IHBhc3N3b3JkID0gU3RyaW5nKHBheWxvYWQucGFzc3dvcmQgfHwgIiIpOwogICAgY29uc3QgdXNlciA9IGF3YWl0IHByaXNtYS51c2VyLmZpbmRVbmlxdWUoeyB3aGVyZTogeyBlbWFpbCB9LCBzZWxlY3Q6IHsgaWQ6IHRydWUsIHJvbGU6IHRydWUsIGlzQWN0aXZlOiB0cnVlIH0gfSk7CiAgICBpZiAoIXVzZXIgfHwgdXNlci5yb2xlICE9PSAiQURNSU4iKSB0aHJvdyBuZXcgRXJyb3IoIkFETUlOX0FDQ09VTlRfTk9UX0ZPVU5EIik7CiAgICBpZiAoIXVzZXIuaXNBY3RpdmUpIHRocm93IG5ldyBFcnJvcigiQURNSU5fQUNDT1VOVF9JTkFDVElWRSIpOwogICAgY29uc3QgcGFzc3dvcmRIYXNoID0gYXdhaXQgYmNyeXB0Lmhhc2gocGFzc3dvcmQsIDEyKTsKICAgIGF3YWl0IHByaXNtYS51c2VyLnVwZGF0ZSh7IHdoZXJlOiB7IGlkOiB1c2VyLmlkIH0sIGRhdGE6IHsgcGFzc3dvcmRIYXNoIH0gfSk7CiAgICBwcm9jZXNzLnN0ZG91dC53cml0ZSgiQURNSU5fUEFTU1dPUkRfUkVTRVRfT0tcbiIpOwogIH0gY2F0Y2ggKGVycm9yKSB7CiAgICBjb25zdCBjb2RlID0gZXJyb3IgJiYgdHlwZW9mIGVycm9yLm1lc3NhZ2UgPT09ICJzdHJpbmciID8gZXJyb3IubWVzc2FnZSA6ICIiOwogICAgaWYgKGNvZGUgPT09ICJBRE1JTl9BQ0NPVU5UX05PVF9GT1VORCIgfHwgY29kZSA9PT0gIkFETUlOX0FDQ09VTlRfSU5BQ1RJVkUiKSBjb25zb2xlLmVycm9yKGNvZGUpOwogICAgZWxzZSBjb25zb2xlLmVycm9yKCJBRE1JTl9QQVNTV09SRF9SRVNFVF9GQUlMRUQiKTsKICAgIHByb2Nlc3MuZXhpdENvZGUgPSAxOwogIH0gZmluYWxseSB7CiAgICBhd2FpdCBwcmlzbWEuJGRpc2Nvbm5lY3QoKTsKICB9Cn0pKCk7'
